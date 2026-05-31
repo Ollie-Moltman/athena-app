@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Screen capture permission (MediaProjection) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
     <application
-        android:label="athena"
+        android:label="Athena"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

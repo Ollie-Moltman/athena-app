@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../../services/api_service.dart';
+import 'package:image/image.dart' as img;
+import '../../services/local_detection_service.dart';
 import '../../models/scan_result.dart';
 import 'results_screen.dart';
 
@@ -13,17 +15,16 @@ class ScanningScreen extends StatefulWidget {
 class _ScanningScreenState extends State<ScanningScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
-  final ApiService _apiService = ApiService();
+  final LocalDetectionService _detectionService = LocalDetectionService();
   String _currentLayer = 'Initializing...';
   int _progress = 0;
   bool _isPaused = false;
 
-  // Simulated layer progress
   final List<_LayerInfo> _layers = const [
-    _LayerInfo('Provenance', 'Checking metadata...', 1),
-    _LayerInfo('Visual Artifacts', 'Analyzing frames...', 2),
-    _LayerInfo('Deep Learning', 'ML classification...', 3),
-    _LayerInfo('Contextual', 'Cross-referencing...', 4),
+    _LayerInfo('Provenance', 'Checking capture metadata...', 1),
+    _LayerInfo('Visual Artifacts', 'Analyzing frame patterns...', 2),
+    _LayerInfo('Deep Learning', 'Running ML classification...', 3),
+    _LayerInfo('Contextual', 'Cross-referencing signals...', 4),
   ];
 
   @override
@@ -37,47 +38,93 @@ class _ScanningScreenState extends State<ScanningScreen>
   }
 
   Future<void> _startScan() async {
+    // Capture frames via platform channel (MediaProjection)
+    // For now: use placeholder frames until real capture is wired
+    final frames = await _captureFrames();
+
     for (var layer in _layers) {
-      if (_isPaused) {
-        await _waitWhilePaused();
-      }
+      if (_isPaused) await _waitWhilePaused();
+
       setState(() {
         _currentLayer = layer.label;
         _progress = layer.index;
       });
-      // Simulate analysis time per layer
-      await Future.delayed(Duration(milliseconds: 800 + layer.index * 400));
+
+      await Future.delayed(Duration(milliseconds: 600 + layer.index * 300));
     }
 
-    // Finish
     setState(() => _progress = 4);
 
-    // Get result (simulated for now)
-    await Future.delayed(const Duration(milliseconds: 500));
+    // Run on-device detection
+    final result = await _detectionService.analyze(
+      frames: frames,
+      durationMs: 3000,
+    );
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => ResultsScreen(
-          result: ScanResult(
-            id: 'sim_001',
-            verdict: 'ai_generated',
-            confidence: 87,
-            layers: LayerScores(
-              provenance: LayerScore(flagged: false, score: 12),
-              visual: LayerScore(flagged: true, score: 94, details: [
-                'Facial landmark anomalies detected',
-                'Temporal frame inconsistencies found',
-              ]),
-              deepLearning: LayerScore(flagged: true, score: 81),
-              contextual: LayerScore(flagged: false, score: 8),
-            ),
-            scannedAt: DateTime.now(),
-            processingTimeMs: 2450,
-          ),
-        ),
+        builder: (_) => ResultsScreen(result: result),
       ),
     );
+  }
+
+  Future<List<Uint8List>> _captureFrames() async {
+    // TODO: Wire to ScreenCaptureService platform channel
+    // For MVP: generate synthetic test frames to demonstrate detection
+    return _generateTestFrames();
+  }
+
+  List<Uint8List> _generateTestFrames() {
+    // Generate 10 synthetic frames for MVP testing
+    // These demonstrate the detection pipeline working
+    final frames = <Uint8List>[];
+    final image = img.Image(width: 640, height: 480);
+
+    // Fill with a synthetic-looking gradient
+    for (int y = 0; y < 480; y++) {
+      for (int x = 0; x < 640; x++) {
+        final r = ((x * 0.5) % 256).toInt();
+        final g = ((y * 0.3) % 256).toInt();
+        final b = (((x + y) * 0.4) % 256).toInt();
+        image.setPixel(x, y, img.ColorRgb8(r, g, b));
+      }
+    }
+
+    // Add some "content" blocks to simulate real video
+    for (int y = 100; y < 380; y++) {
+      for (int x = 100; x < 540; x++) {
+        if (y > 200 && y < 280 && x > 200 && x < 440) {
+          // Dark center block (face-like region)
+          image.setPixel(x, y, img.ColorRgb8(30, 30, 50));
+        }
+      }
+    }
+
+    final png = img.encodePng(image);
+    frames.add(png);
+
+    // Add slight variations for temporal analysis
+    for (int i = 1; i < 10; i++) {
+      final variant = img.Image(width: 640, height: 480);
+      for (int y = 0; y < 480; y++) {
+        for (int x = 0; x < 640; x++) {
+          final noise = (i * 5) % 20;
+          final p = image.getPixel(x, y);
+          variant.setPixel(
+            x, y,
+            img.ColorRgb8(
+              (p.r.toInt() + noise).clamp(0, 255),
+              (p.g.toInt() + noise).clamp(0, 255),
+              (p.b.toInt() + noise).clamp(0, 255),
+            ),
+          );
+        }
+      }
+      frames.add(img.encodePng(variant));
+    }
+
+    return frames;
   }
 
   Future<void> _waitWhilePaused() async {
@@ -122,7 +169,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                     ),
                   ),
                   const Spacer(),
-                  const SizedBox(width: 48), // balance the close button
+                  const SizedBox(width: 48),
                 ],
               ),
 
@@ -144,7 +191,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF6366F1)
+                          color: Color(0xFF6366F1)
                               .withOpacity(0.3 + _pulseController.value * 0.3),
                           blurRadius: 20 + _pulseController.value * 20,
                           spreadRadius: 2 + _pulseController.value * 5,
@@ -178,7 +225,6 @@ class _ScanningScreenState extends State<ScanningScreen>
 
               const SizedBox(height: 40),
 
-              // Current layer label
               Text(
                 _currentLayer,
                 style: const TextStyle(
@@ -216,8 +262,7 @@ class _ScanningScreenState extends State<ScanningScreen>
               GestureDetector(
                 onTap: _togglePause,
                 child: Container(
-                  padding:
- const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A1A2E),
                     borderRadius: BorderRadius.circular(30),
@@ -247,7 +292,6 @@ class _ScanningScreenState extends State<ScanningScreen>
 
               const SizedBox(height: 24),
 
-              // Cancel button
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text(

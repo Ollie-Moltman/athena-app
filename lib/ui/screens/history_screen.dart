@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../models/scan_result.dart';
-import '../../services/api_service.dart';
 import 'results_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -12,26 +11,16 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  final ApiService _apiService = ApiService();
+  // History stored locally on-device (shared_preferences or sqflite in production)
   List<ScanResult> _history = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
-  }
-
-  Future<void> _loadHistory() async {
-    try {
-      final history = await _apiService.getHistory();
-      setState(() {
-        _history = history;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-    }
+    // In production: load from SharedPreferences or SQLite
+    _isLoading = false;
   }
 
   @override

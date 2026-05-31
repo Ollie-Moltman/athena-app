@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/screen_capture_service.dart';
-import '../../services/api_service.dart';
 import 'scanning_screen.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -13,7 +12,6 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   final ScreenCaptureService _captureService = ScreenCaptureService();
-  final ApiService _apiService = ApiService();
   bool _isCapturing = false;
 
   Future<void> _startScanning() async {
