@@ -23,7 +23,7 @@ class _ScanningScreenState extends State<ScanningScreen>
   String _currentLayer = 'Initializing...';
   int _progress = 0;
   String? _errorMessage;
-  List<String> _logLines = [];
+  final List<String> _logLines = [];
   int _capturedFrames = 0;
   bool _analysisStarted = false;
 
