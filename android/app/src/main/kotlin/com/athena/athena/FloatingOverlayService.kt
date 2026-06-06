@@ -420,6 +420,9 @@ class FloatingOverlayService : Service() {
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
         capturedFrames.clear()
 
+        // Signal Flutter via empty frame so waitForScanComplete() resolves
+        broadcastScanComplete()
+
         handler.postDelayed({
             stopSelf()
         }, 1500)
