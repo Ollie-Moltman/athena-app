@@ -25,8 +25,8 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
@@ -47,11 +47,16 @@ class FloatingOverlayService : Service() {
     private var maxDurationMs = 30000
     private val capturedFrames = mutableListOf<ByteArray>()
     private var captureStartTime = 0L
-    private var scanButton: Button? = null
-    private var pausePlayButton: Button? = null
-    private var finishButton: Button? = null
+    private var elapsedSeconds = 0
+    private var timerRunnable: Runnable? = null
+
+    // UI refs
+    private var scanBtn: ImageView? = null
+    private var pausePlayBtn: ImageView? = null
+    private var finishBtn: ImageView? = null
+    private var timerText: TextView? = null
     private var statusText: TextView? = null
-    private var imageReceiver: ImageReader? = null
+    private var recDot: TextView? = null
 
     private val frameBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -75,7 +80,7 @@ class FloatingOverlayService : Service() {
         registerReceiver(frameBroadcastReceiver, filter)
 
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("Waiting for permission..."))
+        startForeground(NOTIFICATION_ID, createNotification("Starting Athena..."))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -86,19 +91,18 @@ class FloatingOverlayService : Service() {
         if (resultCode == Activity.RESULT_OK && data != null) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
-            setupCapture()
-            // Create overlay ONLY after we have a valid mediaProjection
+            // Create overlay immediately — user taps SCAN to begin actual capture
             createOverlayView()
             updateNotification("Ready — tap SCAN to begin")
         } else {
-            // No permission — still show overlay in demo/denied mode
             createOverlayView()
-            updateNotification("Permission denied — demo mode")
+            updateNotification("Permission denied")
         }
 
         return START_STICKY
     }
 
+    @SuppressLint("WrongConstant", "SetTextI18n")
     private fun createOverlayView() {
         overlayView = FrameLayout(this)
 
@@ -111,82 +115,125 @@ class FloatingOverlayService : Service() {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            horizontalMargin = 24f
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         }
 
         try {
             windowManager?.addView(overlayView, params)
         } catch (e: Exception) {
-            // May fail on some devices without SYSTEM_ALERT_WINDOW permission
+            // May fail without SYSTEM_ALERT_WINDOW permission
         }
 
-        updateOverlayContent()
-    }
-
-    @SuppressLint("SetTextI18n")
-    private fun updateOverlayContent() {
-        val view = overlayView ?: return
-        view.removeAllViews()
-
+        // Build the pill-shaped overlay
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF1A1A2E.toInt())
-            setPadding(48, 32, 48, 32)
+            setBackgroundColor(0xE61A1A2E.toInt())
+            setPadding(20, 16, 20, 16)
         }
 
-        val row = LinearLayout(this).apply {
+        // Top row: rec dot + status + timer
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 12)
+        }
+
+        // Red rec dot (small square)
+        recDot = TextView(this).apply {
+            text = "■"
+            setTextColor(0xFFF85149.toInt())
+            textSize = 10f
+        }
+        (recDot!!.layoutParams as LinearLayout.LayoutParams).marginEnd = 8
+
+        statusText = TextView(this).apply {
+            text = "Ready"
+            setTextColor(0xFFA0A0A0.toInt())
+            textSize = 13f
+        }
+
+        timerText = TextView(this).apply {
+            text = "0:00"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 13f
+            setPadding(16, 0, 16, 0)
+        }
+
+        topRow.addView(recDot)
+        topRow.addView(statusText)
+        topRow.addView(timerText)
+
+        // Button row
+        val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
 
-        statusText = TextView(this).apply {
-            text = " Tap SCAN to start"
-            setTextColor(0xFFFFFFFF.toInt())
-            textSize = 14f
+        // SCAN button (red circle with ⏺ symbol)
+        scanBtn = ImageView(this).apply {
+            setBackgroundColor(0xFFF85149.toInt())
+            setImageResource(android.R.drawable.ic_media_play) // fallback; we use text overlay below
+            alpha = 1f
         }
-
-        scanButton = Button(this).apply {
-            text = "SCAN"
-            setBackgroundColor(0xFF6366F1.toInt())
+        val scanBtnWrapper = FrameLayout(this)
+        scanBtnWrapper.layoutParams = LinearLayout.LayoutParams(56, 56).apply { marginEnd = 16 }
+        val scanLabel = TextView(this).apply {
+            text = "⏺"
             setTextColor(0xFFFFFFFF.toInt())
-            setOnClickListener { sendBroadcast(Intent(ACTION_SCAN)) }
+            textSize = 22f
+            gravity = Gravity.CENTER
         }
+        scanBtnWrapper.addView(scanBtn, FrameLayout.LayoutParams(56, 56).apply { gravity = Gravity.CENTER })
+        scanBtnWrapper.addView(scanLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        scanBtnWrapper.setOnClickListener { sendBroadcast(Intent(ACTION_SCAN)) }
 
-        pausePlayButton = Button(this).apply {
-            text = "PAUSE"
+
+        // PAUSE button (purple circle with ⏸)
+        pausePlayBtn = ImageView(this).apply {
             setBackgroundColor(0xFF8B5CF6.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            isEnabled = false
-            setOnClickListener { sendBroadcast(Intent(ACTION_PAUSE_PLAY)) }
+            alpha = 0.5f
         }
+        val pauseBtnWrapper = FrameLayout(this)
+        pauseBtnWrapper.layoutParams = LinearLayout.LayoutParams(48, 48).apply { marginEnd = 16 }
+        val pauseLabel = TextView(this).apply {
+            text = "⏸"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 18f
+            gravity = Gravity.CENTER
+        }
+        pauseBtnWrapper.addView(pausePlayBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        pauseBtnWrapper.addView(pauseLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        pauseBtnWrapper.setOnClickListener { sendBroadcast(Intent(ACTION_PAUSE_PLAY)) }
 
-        finishButton = Button(this).apply {
-            text = "FINISH"
+        // FINISH button (green circle with ✕)
+        finishBtn = ImageView(this).apply {
             setBackgroundColor(0xFF10B981.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            isEnabled = false
-            setOnClickListener { sendBroadcast(Intent(ACTION_FINISH)) }
+            alpha = 0.5f
         }
+        val finishBtnWrapper = FrameLayout(this)
+        finishBtnWrapper.layoutParams = LinearLayout.LayoutParams(48, 48)
+        val finishLabel = TextView(this).apply {
+            text = "✕"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 18f
+            gravity = Gravity.CENTER
+        }
+        finishBtnWrapper.addView(finishBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        finishBtnWrapper.addView(finishLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        finishBtnWrapper.setOnClickListener { sendBroadcast(Intent(ACTION_FINISH)) }
 
-        val btnParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        btnParams.setMargins(8, 0, 8, 0)
+        btnRow.addView(scanBtnWrapper)
+        btnRow.addView(pauseBtnWrapper)
+        btnRow.addView(finishBtnWrapper)
 
-        row.addView(scanButton, btnParams)
-        row.addView(pausePlayButton, btnParams)
-        row.addView(finishButton, btnParams)
+        container.addView(topRow)
+        container.addView(btnRow)
 
-        container.addView(statusText, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = 24 })
-
-        container.addView(row)
-
-        view.addView(container)
+        overlayView!!.addView(container)
     }
 
     @SuppressLint("WrongConstant")
@@ -198,8 +245,6 @@ class FloatingOverlayService : Service() {
         val dpi = metrics.densityDpi
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        // imageReceiver is the field used by the capture thread; keep in sync
-        imageReceiver = imageReader
 
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
@@ -216,25 +261,32 @@ class FloatingOverlayService : Service() {
 
         capturedFrames.clear()
         captureStartTime = System.currentTimeMillis()
+        elapsedSeconds = 0
     }
 
     private fun startScanning() {
         if (isCapturing) return
-        if (imageReceiver == null) {
-            statusText?.text = " Capture not ready, try again"
-            return
+
+        // Set up MediaProjection + ImageReader if not already done
+        if (imageReader == null) {
+            setupCapture()
         }
+
         isCapturing = true
         isPaused = false
 
-        scanButton?.isEnabled = false
-        pausePlayButton?.isEnabled = true
-        finishButton?.isEnabled = true
-        statusText?.text = " Scanning..."
+        // Update UI
+        scanBtn?.alpha = 0.5f
+        scanBtn?.isEnabled = false
+        pausePlayBtn?.alpha = 1f
+        pausePlayBtn?.isEnabled = true
+        finishBtn?.alpha = 1f
+        finishBtn?.isEnabled = true
+        statusText?.text = "Scanning"
+        recDot?.setBackgroundColor(0xFFF85149.toInt())
 
         // Cancel any existing auto-close timer
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
-        // Auto-close timer starts from SCAN tap, not from service start
         autoCloseRunnable = Runnable {
             if (isCapturing) {
                 finishScanning()
@@ -242,11 +294,25 @@ class FloatingOverlayService : Service() {
         }
         handler.postDelayed(autoCloseRunnable!!, maxDurationMs.toLong())
 
+        // Timer update
+        timerRunnable = object : Runnable {
+            override fun run() {
+                if (isCapturing && !isPaused) {
+                    elapsedSeconds++
+                    val m = elapsedSeconds / 60
+                    val s = elapsedSeconds % 60
+                    timerText?.text = String.format("%d:%02d", m, s)
+                    handler.postDelayed(this, 1000)
+                }
+            }
+        }
+        handler.post(timerRunnable!!)
+
         // Start frame capture thread
         captureThread = Thread {
             while (isCapturing) {
                 if (!isPaused) {
-                    val image = imageReceiver?.acquireLatestImage()
+                    val image = imageReader?.acquireLatestImage()
                     if (image != null) {
                         val frame = imageToBytes(image)
                         image.close()
@@ -257,7 +323,7 @@ class FloatingOverlayService : Service() {
                     }
                 }
                 try {
-                    Thread.sleep(100)
+                    Thread.sleep(33) // ~30fps
                 } catch (e: InterruptedException) {
                     break
                 }
@@ -269,29 +335,51 @@ class FloatingOverlayService : Service() {
     }
 
     private fun togglePausePlay() {
+        if (!isCapturing) return
         isPaused = !isPaused
-        pausePlayButton?.text = if (isPaused) "PLAY" else "PAUSE"
-        statusText?.text = if (isPaused) " Paused" else " Scanning..."
+
+        if (isPaused) {
+            statusText?.text = "Paused"
+            timerRunnable?.let { handler.removeCallbacks(it) }
+        } else {
+            statusText?.text = "Scanning"
+            // Resume timer
+            timerRunnable = object : Runnable {
+                override fun run() {
+                    if (isCapturing && !isPaused) {
+                        elapsedSeconds++
+                        val m = elapsedSeconds / 60
+                        val s = elapsedSeconds % 60
+                        timerText?.text = String.format("%d:%02d", m, s)
+                        handler.postDelayed(this, 1000)
+                    }
+                }
+            }
+            handler.post(timerRunnable!!)
+        }
     }
 
     private fun finishScanning() {
         isCapturing = false
-        scanButton?.isEnabled = true
-        pausePlayButton?.isEnabled = false
-        finishButton?.isEnabled = false
-
+        isPaused = false
+        scanBtn?.alpha = 1f
+        scanBtn?.isEnabled = true
+        pausePlayBtn?.alpha = 0.5f
+        pausePlayBtn?.isEnabled = false
+        finishBtn?.alpha = 0.5f
+        finishBtn?.isEnabled = false
+        statusText?.text = "Done ${capturedFrames.size} frames"
+        timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
 
         val duration = System.currentTimeMillis() - captureStartTime
-        statusText?.text = " Done! ${capturedFrames.size} frames"
-
         val intent = Intent("com.athena.app.SCAN_COMPLETE").apply {
             putExtra("frameCount", capturedFrames.size)
             putExtra("durationMs", duration.toInt())
         }
         sendBroadcast(intent)
 
-        // Signal Flutter's EventChannel to resolve waitForScanComplete()
+        // Signal Flutter via empty frame
         broadcastScanComplete()
 
         handler.postDelayed({
@@ -304,8 +392,10 @@ class FloatingOverlayService : Service() {
         isPaused = false
         captureThread?.interrupt()
         captureThread = null
+        timerRunnable?.let { handler.removeCallbacks(it) }
         virtualDisplay?.release()
         imageReader?.close()
+        imageReader = null
     }
 
     private fun imageToBytes(image: Image): ByteArray? {
@@ -329,7 +419,7 @@ class FloatingOverlayService : Service() {
         sendBroadcast(intent)
     }
 
-    /** Send an empty frame to signal scan completion — this reaches Flutter via EventChannel. */
+    /** Send an empty frame to signal scan completion to Flutter's EventChannel. */
     private fun broadcastScanComplete() {
         val intent = Intent("com.athena.app.FRAME_CAPTURED").apply {
             putExtra("frame_data", ByteArray(0))
@@ -366,6 +456,7 @@ class FloatingOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
+        timerRunnable?.let { handler.removeCallbacks(it) }
         stopCapture()
         try {
             unregisterReceiver(frameBroadcastReceiver)
