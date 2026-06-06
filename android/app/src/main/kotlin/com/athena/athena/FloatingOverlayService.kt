@@ -452,11 +452,11 @@ class FloatingOverlayService : Service() {
         scanLabel?.text = "⏺"
         scanTextLabel?.text = "START"
         scanBtnWrapper?.isEnabled = true
-        pausePlayBtn?.alpha = 0.5f
+        pausePlayBtn?.alpha = 0.4f
         pauseBtnWrapper?.isEnabled = false
         pauseLabel?.text = "⏸"
         pauseTextLabel?.text = "PAUSE"
-        cancelBtnWrapper?.alpha = 0.5f
+        cancelBtnWrapper?.alpha = 0.4f
         cancelBtnWrapper?.isEnabled = false
         statusText?.text = "Done — ${capturedFrames.size} frames captured"
         timerRunnable?.let { handler.removeCallbacks(it) }
