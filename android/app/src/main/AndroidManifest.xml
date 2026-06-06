@@ -29,16 +29,6 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
-        <receiver
-            android:name=".OverlayActionReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.athena.app.ACTION_SCAN" />
-                <action android:name="com.athena.app.ACTION_PAUSE_PLAY" />
-                <action android:name="com.athena.app.ACTION_FINISH" />
-            </intent-filter>
-        </receiver>
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

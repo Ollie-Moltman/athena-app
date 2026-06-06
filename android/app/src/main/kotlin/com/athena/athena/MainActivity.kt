@@ -34,7 +34,12 @@ class MainActivity : FlutterActivity() {
             val frameData = intent?.getByteArrayExtra("frame_data")
             if (frameData != null && frameEventSink != null) {
                 handler.post {
-                    frameEventSink?.success(frameData)
+                    if (frameData.isEmpty()) {
+                        // Empty frame = scan complete signal → resolve Flutter's waitForScanComplete()
+                        frameEventSink?.success(null)
+                    } else {
+                        frameEventSink?.success(frameData)
+                    }
                 }
             }
         }
@@ -65,6 +70,10 @@ class MainActivity : FlutterActivity() {
                 "getAvailableDisplays" -> {
                     val displays = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
                     result.success(displays.displays.map { it.displayId.toString() })
+                }
+                "getScreenDimensions" -> {
+                    val metrics = resources.displayMetrics
+                    result.success(mapOf("width" to metrics.widthPixels, "height" to metrics.heightPixels))
                 }
                 else -> result.notImplemented()
             }

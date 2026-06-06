@@ -291,6 +291,9 @@ class FloatingOverlayService : Service() {
         }
         sendBroadcast(intent)
 
+        // Signal Flutter's EventChannel to resolve waitForScanComplete()
+        broadcastScanComplete()
+
         handler.postDelayed({
             stopSelf()
         }, 2000)
@@ -322,6 +325,14 @@ class FloatingOverlayService : Service() {
     private fun broadcastFrame(frame: ByteArray) {
         val intent = Intent("com.athena.app.FRAME_CAPTURED").apply {
             putExtra("frame_data", frame)
+        }
+        sendBroadcast(intent)
+    }
+
+    /** Send an empty frame to signal scan completion — this reaches Flutter via EventChannel. */
+    private fun broadcastScanComplete() {
+        val intent = Intent("com.athena.app.FRAME_CAPTURED").apply {
+            putExtra("frame_data", ByteArray(0))
         }
         sendBroadcast(intent)
     }
