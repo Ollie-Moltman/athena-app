@@ -19,7 +19,7 @@ class ScreenCaptureService {
   final List<Uint8List> _frames = [];
 
   // Signals scan completion
-  final Completer<void> _scanCompleter = Completer<void>();
+  Completer<void> _scanCompleter = Completer<void>();
 
   StreamSubscription? _frameSubscription;
   bool _captureStarted = false;
@@ -45,6 +45,11 @@ class ScreenCaptureService {
   }) async {
     if (_captureStarted) return;
     _captureStarted = true;
+    _frames.clear();
+    if (!_scanCompleter.isCompleted) {
+      _scanCompleter.complete();
+    }
+    _scanCompleter = Completer<void>();
 
     try {
       // Ask native side for screen dimensions
