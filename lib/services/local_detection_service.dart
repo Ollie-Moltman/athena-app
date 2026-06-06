@@ -45,7 +45,7 @@ class LocalDetectionService {
     stopwatch.stop();
 
     return ScanResult(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: 'scan_${DateTime.now().millisecondsSinceEpoch}',
       verdict: overall['verdict'] as String,
       confidence: overall['confidence'] as int,
       layers: LayerScores(
@@ -61,6 +61,68 @@ class LocalDetectionService {
       scannedAt: DateTime.now(),
       processingTimeMs: stopwatch.elapsedMilliseconds,
     );
+  }
+
+  /// Demo-mode analysis using only metadata (no real frames).
+  Future<ScanResult> analyzeDemo({required int frameCount, required int durationMs}) async {
+    final stopwatch = Stopwatch()..start();
+
+    if (frameCount == 0) return _emptyResult();
+
+    // Derive deterministic-ish scores from metadata
+    final seed = frameCount % 10;
+    final fps = frameCount / (durationMs / 1000);
+
+    final provenanceScore = _provenanceFromMeta(frameCount, durationMs, fps);
+    final visualScore = _visualFromMeta(frameCount, seed);
+    final deepScore = _deepFromMeta(frameCount, seed);
+    final contextualScore = _contextualFromMeta(fps);
+
+    final overall = _aggregate(provenanceScore, visualScore, deepScore, contextualScore);
+    final isAI = overall['verdict'] == 'ai_generated';
+
+    stopwatch.stop();
+
+    return ScanResult(
+      id: 'scan_${DateTime.now().millisecondsSinceEpoch}',
+      verdict: overall['verdict'] as String,
+      confidence: overall['confidence'] as int,
+      layers: LayerScores(
+        provenance: LayerScore(flagged: provenanceScore > 50, score: provenanceScore),
+        visual: LayerScore(
+          flagged: isAI,
+          score: visualScore,
+          details: isAI
+              ? ['Spatial frequency anomalies', 'Temporal frame inconsistencies']
+              : ['Normal visual patterns'],
+        ),
+        deepLearning: LayerScore(flagged: isAI, score: deepScore),
+        contextual: LayerScore(flagged: contextualScore > 50, score: contextualScore),
+      ),
+      scannedAt: DateTime.now(),
+      processingTimeMs: stopwatch.elapsedMilliseconds,
+    );
+  }
+
+  int _provenanceFromMeta(int frameCount, int durationMs, double fps) {
+    if (frameCount < 3) return 25;
+    if (fps > 35) return 70;
+    if (fps < 5) return 40;
+    return 20;
+  }
+
+  int _visualFromMeta(int frameCount, int seed) {
+    return (40 + seed * 3).clamp(0, 95);
+  }
+
+  int _deepFromMeta(int frameCount, int seed) {
+    return (35 + seed * 4).clamp(0, 95);
+  }
+
+  int _contextualFromMeta(double fps) {
+    if (fps < 1) return 75;
+    if (fps > 60) return 80;
+    return 15;
   }
 
   // ── Layer 1: Provenance ─────────────────────────────────────────────────────

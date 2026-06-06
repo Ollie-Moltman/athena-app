@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.4
+  sdk: ^3.5.0
 
 dependencies:
   flutter:
@@ -16,6 +16,9 @@ dependencies:
 
   # Screen capture permission
   permission_handler: ^11.3.1
+
+  # On-device storage for scan history
+  shared_preferences: ^2.2.3
 
   cupertino_icons: ^1.0.8
 

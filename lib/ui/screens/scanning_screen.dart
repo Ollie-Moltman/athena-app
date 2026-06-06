@@ -1,12 +1,15 @@
-import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
+import '../../services/screen_capture_service.dart';
 import '../../services/local_detection_service.dart';
 import '../../models/scan_result.dart';
+import '../../main.dart';
 import 'results_screen.dart';
 
 class ScanningScreen extends StatefulWidget {
-  const ScanningScreen({super.key});
+  final bool permissionGranted;
+
+  const ScanningScreen({super.key, required this.permissionGranted});
 
   @override
   State<ScanningScreen> createState() => _ScanningScreenState();
@@ -15,17 +18,15 @@ class ScanningScreen extends StatefulWidget {
 class _ScanningScreenState extends State<ScanningScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
+  final ScreenCaptureService _captureService = ScreenCaptureService();
   final LocalDetectionService _detectionService = LocalDetectionService();
+
   String _currentLayer = 'Initializing...';
   int _progress = 0;
-  bool _isPaused = false;
-
-  final List<_LayerInfo> _layers = const [
-    _LayerInfo('Provenance', 'Checking capture metadata...', 1),
-    _LayerInfo('Visual Artifacts', 'Analyzing frame patterns...', 2),
-    _LayerInfo('Deep Learning', 'Running ML classification...', 3),
-    _LayerInfo('Contextual', 'Cross-referencing signals...', 4),
-  ];
+  String? _errorMessage;
+  List<String> _logLines = [];
+  int _capturedFrames = 0;
+  bool _analysisStarted = false;
 
   @override
   void initState() {
@@ -34,112 +35,187 @@ class _ScanningScreenState extends State<ScanningScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-    _startScan();
+
+    if (widget.permissionGranted) {
+      _startRealCapture();
+    } else {
+      _startDemoCapture();
+    }
   }
 
-  Future<void> _startScan() async {
-    // Capture frames via platform channel (MediaProjection)
-    // For now: use placeholder frames until real capture is wired
-    final frames = await _captureFrames();
+  Future<void> _startRealCapture() async {
+    setState(() {
+      _currentLayer = 'Requesting screen capture...';
+      _progress = 1;
+      _logLines.add('Starting capture with maxDuration=${settingsService.maxDurationMs}ms');
+    });
 
-    for (var layer in _layers) {
-      if (_isPaused) await _waitWhilePaused();
-
-      setState(() {
-        _currentLayer = layer.label;
-        _progress = layer.index;
-      });
-
-      await Future.delayed(Duration(milliseconds: 600 + layer.index * 300));
-    }
-
-    setState(() => _progress = 4);
-
-    // Run on-device detection
-    final result = await _detectionService.analyze(
-      frames: frames,
-      durationMs: 3000,
+    await _captureService.startCapture(
+      onFrame: (frame) {
+        setState(() {
+          _capturedFrames++;
+          if (_logLines.length < 5) {
+            _logLines.add('Frame $_capturedFrames: ${frame.length} bytes');
+          }
+        });
+      },
+      onError: (error) {
+        setState(() {
+          _errorMessage = error;
+          _logLines.add('Error: $error');
+        });
+      },
+      maxDurationMs: settingsService.maxDurationMs,
     );
 
     if (!mounted) return;
+
+    setState(() {
+      _currentLayer = 'Capturing frames...';
+      _progress = 2;
+    });
+
+    // Wait for native side to signal scan complete via EventChannel/broadcast
+    await _captureService.waitForScanComplete();
+
+    if (!mounted || _analysisStarted) return;
+    _analysisStarted = true;
+
+    final capturedFrames = _captureService.frames;
+    _logLines.add('Scan complete — ${capturedFrames.length} frames captured');
+
+    if (capturedFrames.isEmpty) {
+      _logLines.add('No frames captured, falling back to demo mode');
+      await _startDemoCapture();
+    } else {
+      await _runAnalysisWithFrames(capturedFrames, settingsService.maxDurationMs);
+    }
+  }
+
+  Future<void> _startDemoCapture() async {
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Demo mode — analyzing...';
+      _progress = 2;
+      _logLines.add('Demo mode active');
+    });
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+    setState(() => _capturedFrames = 30);
+    _logLines.add('Demo: 30 synthetic frames');
+
+    await _runAnalysis(30, 2000);
+  }
+
+  /// Run analysis with real captured frames.
+  Future<void> _runAnalysisWithFrames(List<dynamic> frames, int durationMs) async {
+    if (!mounted) return;
+
+    setState(() {
+      _currentLayer = 'Layer 1: Provenance';
+      _progress = 2;
+    });
+    await Future.delayed(const Duration(milliseconds: 700));
+
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Layer 2: Visual Artifacts';
+      _progress = 3;
+    });
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Layer 3: Deep Learning';
+      _progress = 4;
+    });
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Layer 4: Contextual';
+      _progress = 5;
+    });
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Generating verdict...';
+      _progress = 6;
+    });
+
+    // Pass captured PNG frames to the detection service
+    final result = await _detectionService.analyze(
+      frames: frames.cast(),
+      durationMs: durationMs,
+    );
+
+    await settingsService.incrementScanCount();
+    await historyService.add(result);
+
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => ResultsScreen(result: result),
-      ),
+      MaterialPageRoute(builder: (_) => ResultsScreen(result: result)),
     );
   }
 
-  Future<List<Uint8List>> _captureFrames() async {
-    // TODO: Wire to ScreenCaptureService platform channel
-    // For MVP: generate synthetic test frames to demonstrate detection
-    return _generateTestFrames();
-  }
+  Future<void> _runAnalysis(int framesCount, int durationMs) async {
+    if (!mounted) return;
 
-  List<Uint8List> _generateTestFrames() {
-    // Generate 10 synthetic frames for MVP testing
-    // These demonstrate the detection pipeline working
-    final frames = <Uint8List>[];
-    final image = img.Image(width: 640, height: 480);
+    setState(() {
+      _currentLayer = 'Layer 1: Provenance';
+      _progress = 2;
+    });
+    await Future.delayed(const Duration(milliseconds: 700));
 
-    // Fill with a synthetic-looking gradient
-    for (int y = 0; y < 480; y++) {
-      for (int x = 0; x < 640; x++) {
-        final r = ((x * 0.5) % 256).toInt();
-        final g = ((y * 0.3) % 256).toInt();
-        final b = (((x + y) * 0.4) % 256).toInt();
-        image.setPixel(x, y, img.ColorRgb8(r, g, b));
-      }
-    }
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Layer 2: Visual Artifacts';
+      _progress = 3;
+    });
+    await Future.delayed(const Duration(milliseconds: 800));
 
-    // Add some "content" blocks to simulate real video
-    for (int y = 100; y < 380; y++) {
-      for (int x = 100; x < 540; x++) {
-        if (y > 200 && y < 280 && x > 200 && x < 440) {
-          // Dark center block (face-like region)
-          image.setPixel(x, y, img.ColorRgb8(30, 30, 50));
-        }
-      }
-    }
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Layer 3: Deep Learning';
+      _progress = 4;
+    });
+    await Future.delayed(const Duration(milliseconds: 800));
 
-    final png = img.encodePng(image);
-    frames.add(png);
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Layer 4: Contextual';
+      _progress = 5;
+    });
+    await Future.delayed(const Duration(milliseconds: 600));
 
-    // Add slight variations for temporal analysis
-    for (int i = 1; i < 10; i++) {
-      final variant = img.Image(width: 640, height: 480);
-      for (int y = 0; y < 480; y++) {
-        for (int x = 0; x < 640; x++) {
-          final noise = (i * 5) % 20;
-          final p = image.getPixel(x, y);
-          variant.setPixel(
-            x, y,
-            img.ColorRgb8(
-              (p.r.toInt() + noise).clamp(0, 255),
-              (p.g.toInt() + noise).clamp(0, 255),
-              (p.b.toInt() + noise).clamp(0, 255),
-            ),
-          );
-        }
-      }
-      frames.add(img.encodePng(variant));
-    }
+    if (!mounted) return;
+    setState(() {
+      _currentLayer = 'Generating verdict...';
+      _progress = 6;
+    });
 
-    return frames;
-  }
+    final result = await _detectionService.analyzeDemo(
+      frameCount: framesCount,
+      durationMs: durationMs,
+    );
 
-  Future<void> _waitWhilePaused() async {
-    while (_isPaused) {
-      await Future.delayed(const Duration(milliseconds: 100));
-    }
-  }
+    // Save to history
+    await settingsService.incrementScanCount();
+    await historyService.add(result);
 
-  void _togglePause() {
-    setState(() => _isPaused = !_isPaused);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => ResultsScreen(result: result)),
+    );
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _captureService.stopCapture();
     super.dispose();
   }
 
@@ -157,16 +233,15 @@ class _ScanningScreenState extends State<ScanningScreen>
                 children: [
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white70),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () {
+                      _captureService.stopCapture();
+                      Navigator.of(context).pop();
+                    },
                   ),
                   const Spacer(),
                   const Text(
                     'Scanning',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
                   const Spacer(),
                   const SizedBox(width: 48),
@@ -175,7 +250,7 @@ class _ScanningScreenState extends State<ScanningScreen>
 
               const Spacer(),
 
-              // Animated scanning circle
+              // Animated circle
               AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, child) {
@@ -191,8 +266,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Color(0xFF6366F1)
-                              .withOpacity(0.3 + _pulseController.value * 0.3),
+                          color: Color(0xFF6366F1).withOpacity(0.3 + _pulseController.value * 0.3),
                           blurRadius: 20 + _pulseController.value * 20,
                           spreadRadius: 2 + _pulseController.value * 5,
                         ),
@@ -202,19 +276,15 @@ class _ScanningScreenState extends State<ScanningScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
-                            Icons.document_scanner_outlined,
+                          Icon(
+                            _errorMessage != null ? Icons.error_outline : Icons.document_scanner_outlined,
                             size: 48,
                             color: Colors.white,
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '$_progress / 4',
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                            '${_progress > 5 ? 4 : _progress} / 4',
+                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
                         ],
                       ),
@@ -226,11 +296,11 @@ class _ScanningScreenState extends State<ScanningScreen>
               const SizedBox(height: 40),
 
               Text(
-                _currentLayer,
-                style: const TextStyle(
+                _errorMessage ?? _currentLayer,
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _errorMessage != null ? const Color(0xFFEF4444) : Colors.white,
                 ),
               ),
 
@@ -240,64 +310,64 @@ class _ScanningScreenState extends State<ScanningScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(4, (index) {
-                  final isActive = index < _progress;
-                  final isCurrent = index == _progress - 1;
+                  final isActive = index < _progress - 1 || _progress > 5;
+                  final isCurrent = index == _progress - 1 && _progress <= 5;
                   return Container(
                     width: isCurrent ? 24 : 8,
                     height: 8,
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(4),
-                      color: isActive
-                          ? const Color(0xFF6366F1)
-                          : Colors.white.withOpacity(0.2),
+                      color: isActive ? const Color(0xFF6366F1) : Colors.white.withOpacity(0.2),
                     ),
                   );
                 }),
               ),
 
-              const Spacer(),
+              const SizedBox(height: 16),
 
-              // Pause / Resume button
-              GestureDetector(
-                onTap: _togglePause,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              // Frame counter
+              if (_capturedFrames > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A1A2E),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: const Color(0xFF6366F1).withOpacity(0.5),
-                    ),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _isPaused ? Icons.play_arrow : Icons.pause,
-                        color: Colors.white70,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isPaused ? 'Resume' : 'Pause',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '$_capturedFrames frames captured',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 24),
+              const Spacer(),
+
+              // Log viewer
+              if (_logLines.isNotEmpty)
+                Container(
+                  height: 60,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A0A14),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: ListView(
+                    reverse: true,
+                    children: _logLines.reversed
+                        .map((l) => Text(l, style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'monospace')))
+                        .toList(),
+                  ),
+                ),
+
+              const SizedBox(height: 16),
 
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(color: Colors.white38),
-                ),
+                onPressed: () {
+                  _captureService.stopCapture();
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
               ),
             ],
           ),
@@ -305,12 +375,4 @@ class _ScanningScreenState extends State<ScanningScreen>
       ),
     );
   }
-}
-
-class _LayerInfo {
-  final String label;
-  final String description;
-  final int index;
-
-  const _LayerInfo(this.label, this.description, this.index);
 }

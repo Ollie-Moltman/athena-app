@@ -1,15 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/settings_service.dart';
+import 'services/history_service.dart';
 import 'ui/screens/scan_screen.dart';
 import 'ui/screens/history_screen.dart';
 import 'ui/screens/settings_screen.dart';
 
-void main() {
+late SettingsService settingsService;
+late HistoryService historyService;
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    settingsService = SettingsService(prefs);
+    historyService = HistoryService(prefs);
+  } catch (e) {
+    debugPrint('SharedPreferences init error (safe to ignore): $e');
+  }
+
   runApp(const AthenaApp());
 }
 
@@ -25,7 +40,6 @@ class AthenaApp extends StatelessWidget {
         brightness: Brightness.dark,
         primaryColor: const Color(0xFF6366F1),
         scaffoldBackgroundColor: const Color(0xFF0F0F1A),
-        fontFamily: 'Inter',
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF6366F1),
           secondary: Color(0xFF8B5CF6),
