@@ -53,20 +53,23 @@ class FloatingOverlayService : Service() {
     // UI refs
     private var scanBtn: ImageView? = null
     private var pausePlayBtn: ImageView? = null
-    private var finishBtn: ImageView? = null
     private var scanBtnWrapper: FrameLayout? = null
     private var pauseBtnWrapper: FrameLayout? = null
-    private var finishBtnWrapper: FrameLayout? = null
+    private var cancelBtnWrapper: FrameLayout? = null
     private var timerText: TextView? = null
     private var statusText: TextView? = null
     private var recDot: TextView? = null
+    private var scanLabel: TextView? = null
+    private var pauseLabel: TextView? = null
+    private var cancelLabel: TextView? = null
 
     private val frameBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 ACTION_SCAN -> startScanning()
                 ACTION_PAUSE_PLAY -> togglePausePlay()
-                ACTION_FINISH -> finishScanning()
+                ACTION_FINISH -> if (isCapturing) finishScanning() else startScanning()
+                ACTION_CANCEL -> cancelScanning()
             }
         }
     }
@@ -79,6 +82,7 @@ class FloatingOverlayService : Service() {
             addAction(ACTION_SCAN)
             addAction(ACTION_PAUSE_PLAY)
             addAction(ACTION_FINISH)
+            addAction(ACTION_CANCEL)
         }
         registerReceiver(frameBroadcastReceiver, filter)
 
@@ -190,7 +194,7 @@ class FloatingOverlayService : Service() {
         }
         scanBtnWrapper = FrameLayout(this)
         scanBtnWrapper?.layoutParams = LinearLayout.LayoutParams(56, 56).apply { marginEnd = 16 }
-        val scanLabel = TextView(this).apply {
+        scanLabel = TextView(this).apply {
             text = "⏺"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 22f
@@ -207,7 +211,7 @@ class FloatingOverlayService : Service() {
         }
         pauseBtnWrapper = FrameLayout(this)
         pauseBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48).apply { marginEnd = 16 }
-        val pauseLabel = TextView(this).apply {
+        pauseLabel = TextView(this).apply {
             text = "⏸"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 18f
@@ -218,26 +222,26 @@ class FloatingOverlayService : Service() {
         pauseBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_PAUSE_PLAY)) }
 
         // FINISH button (green circle with ✕)
-        finishBtn = ImageView(this).apply {
+        val cancelBtn = ImageView(this).apply {
             setBackgroundColor(0xFF10B981.toInt())
             alpha = 0.5f
         }
-        finishBtnWrapper = FrameLayout(this)
-        finishBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48)
-        val finishLabel = TextView(this).apply {
+        cancelBtnWrapper = FrameLayout(this)
+        cancelBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48)
+        cancelLabel = TextView(this).apply {
             text = "✕"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 18f
             gravity = Gravity.CENTER
         }
-        finishBtnWrapper?.addView(finishBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
-        finishBtnWrapper?.addView(finishLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
-        finishBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_FINISH)) }
+        cancelBtnWrapper?.addView(cancelBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        cancelBtnWrapper?.addView(cancelLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        cancelBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_CANCEL)) }
 
 
         btnRow.addView(scanBtnWrapper)
         btnRow.addView(pauseBtnWrapper)
-        btnRow.addView(finishBtnWrapper)
+        btnRow.addView(cancelBtnWrapper)
 
         container.addView(topRow)
         container.addView(btnRow)
@@ -284,14 +288,16 @@ class FloatingOverlayService : Service() {
         isCapturing = true
         isPaused = false
 
-        // Update UI
-        scanBtn?.alpha = 0.5f
-        scanBtnWrapper?.isEnabled = false
+        // Update UI: scan button shows ⏹ (finish), pause/cancel become active
+        scanBtn?.alpha = 1f
+        scanLabel?.text = "⏹"
+        scanBtnWrapper?.isEnabled = true
         pausePlayBtn?.alpha = 1f
         pauseBtnWrapper?.isEnabled = true
-        finishBtn?.alpha = 1f
-        finishBtnWrapper?.isEnabled = true
-        statusText?.text = "Scanning"
+        pauseLabel?.text = "⏸"
+        cancelBtnWrapper?.alpha = 1f
+        cancelBtnWrapper?.isEnabled = true
+        statusText?.text = "Recording"
         recDot?.setTextColor(0xFFF85149.toInt())
 
         // Cancel any existing auto-close timer
@@ -349,9 +355,11 @@ class FloatingOverlayService : Service() {
 
         if (isPaused) {
             statusText?.text = "Paused"
+            pauseLabel?.text = "▶"
             timerRunnable?.let { handler.removeCallbacks(it) }
         } else {
-            statusText?.text = "Scanning"
+            statusText?.text = "Recording"
+            pauseLabel?.text = "⏸"
             // Resume timer
             timerRunnable = object : Runnable {
                 override fun run() {
@@ -372,11 +380,12 @@ class FloatingOverlayService : Service() {
         isCapturing = false
         isPaused = false
         scanBtn?.alpha = 1f
+        scanLabel?.text = "⏺"
         scanBtnWrapper?.isEnabled = true
         pausePlayBtn?.alpha = 0.5f
         pauseBtnWrapper?.isEnabled = false
-        finishBtn?.alpha = 0.5f
-        finishBtnWrapper?.isEnabled = false
+        cancelBtnWrapper?.alpha = 0.5f
+        cancelBtnWrapper?.isEnabled = false
         statusText?.text = "Done ${capturedFrames.size} frames"
         timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
@@ -394,6 +403,26 @@ class FloatingOverlayService : Service() {
         handler.postDelayed({
             stopSelf()
         }, 2000)
+    }
+
+    private fun cancelScanning() {
+        isCapturing = false
+        isPaused = false
+        scanBtn?.alpha = 1f
+        scanLabel?.text = "⏺"
+        scanBtnWrapper?.isEnabled = true
+        pausePlayBtn?.alpha = 0.5f
+        pauseBtnWrapper?.isEnabled = false
+        cancelBtnWrapper?.alpha = 0.5f
+        cancelBtnWrapper?.isEnabled = false
+        statusText?.text = "Cancelled"
+        timerRunnable?.let { handler.removeCallbacks(it) }
+        autoCloseRunnable?.let { handler.removeCallbacks(it) }
+        capturedFrames.clear()
+
+        handler.postDelayed({
+            stopSelf()
+        }, 1500)
     }
 
     private fun stopCapture() {
@@ -482,5 +511,6 @@ class FloatingOverlayService : Service() {
         const val ACTION_SCAN = "com.athena.app.ACTION_SCAN"
         const val ACTION_PAUSE_PLAY = "com.athena.app.ACTION_PAUSE_PLAY"
         const val ACTION_FINISH = "com.athena.app.ACTION_FINISH"
+        const val ACTION_CANCEL = "com.athena.app.ACTION_CANCEL"
     }
 }
