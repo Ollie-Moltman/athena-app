@@ -458,7 +458,7 @@ class FloatingOverlayService : Service() {
         pauseTextLabel?.text = "PAUSE"
         cancelBtnWrapper?.alpha = 0.5f
         cancelBtnWrapper?.isEnabled = false
-        statusText?.text = "Done ${capturedFrames.size} frames"
+        statusText?.text = "Done — ${capturedFrames.size} frames captured"
         timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
 
@@ -484,13 +484,13 @@ class FloatingOverlayService : Service() {
         scanLabel?.text = "⏺"
         scanTextLabel?.text = "START"
         scanBtnWrapper?.isEnabled = true
-        pausePlayBtn?.alpha = 0.5f
+        pausePlayBtn?.alpha = 0.4f
         pauseBtnWrapper?.isEnabled = false
         pauseLabel?.text = "⏸"
         pauseTextLabel?.text = "PAUSE"
-        cancelBtnWrapper?.alpha = 0.5f
+        cancelBtnWrapper?.alpha = 0.4f
         cancelBtnWrapper?.isEnabled = false
-        statusText?.text = "Cancelled"
+        statusText?.text = "Cancelled — no analysis"
         timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
         capturedFrames.clear()
