@@ -10,10 +10,31 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
+class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   bool _isCapturing = false;
+  bool _permissionDenied = false;
 
   static const MethodChannel _channel = MethodChannel('com.athena.app/capture');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _permissionDenied) {
+      _permissionDenied = false;
+      _startScanning();
+    }
+  }
 
   Future<void> _startScanning() async {
     if (settingsService.scansRemaining <= 0) {
@@ -44,12 +65,16 @@ class _ScanScreenState extends State<ScanScreen> {
           ),
         ).then((_) => setState(() => _isCapturing = false));
       } else {
-        setState(() => _isCapturing = false);
+        setState(() {
+          _isCapturing = false;
+          _permissionDenied = true;
+        });
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Screen capture permission required'),
-            backgroundColor: Color(0xFFEF4444),
-            duration: Duration(seconds: 3),
+            content: Text('⚠️ Enable "Display over other apps" in Settings > Apps > Athena, then tap SCAN again'),
+            backgroundColor: Color(0xFFF59E0B),
+            duration: Duration(seconds: 5),
           ),
         );
       }
@@ -73,7 +98,6 @@ class _ScanScreenState extends State<ScanScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              // Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -100,121 +124,159 @@ class _ScanScreenState extends State<ScanScreen> {
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        icon: const Icon(Icons.history, color: Colors.white70),
-                        onPressed: () => Navigator.of(context).pushNamed('/history'),
+                        icon: const Icon(Icons.history, color: Colors.white54),
+                        onPressed: () => Navigator.pushNamed(context, '/history'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.settings, color: Colors.white54),
+                        onPressed: () => Navigator.pushNamed(context, '/settings'),
                       ),
                     ],
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'AI Video Detection · ${settingsService.maxDurationLabel}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.white38,
-                  letterSpacing: 2,
-                ),
-              ),
-
               const Spacer(),
-
-              // Scan button
-              GestureDetector(
-                onTap: _isCapturing ? null : _startScanning,
-                child: Container(
-                  width: 200,
-                  height: 200,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6366F1).withOpacity(0.4),
-                        blurRadius: 30,
-                        spreadRadius: 5,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: _isCapturing
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.play_arrow_rounded, size: 64, color: Colors.white),
-                              SizedBox(height: 8),
-                              Text(
-                                'SCAN',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                  letterSpacing: 4,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-              ),
-
-              const Spacer(),
-
-              // Instructions
               Container(
-                padding: const EdgeInsets.all(20),
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A2E),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Icon(
+                  Icons.smart_display,
+                  size: 60,
+                  color: Color(0xFF6366F1),
+                ),
+              ),
+              const SizedBox(height: 40),
+              const Text(
+                'Ready to detect\nAI-generated video?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  height: 1.3,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Open any video app first, then tap SCAN.\nThe floating overlay will appear over your video.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white54,
+                  height: 1.5,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1A1A2E),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Column(
+                child: Column(
                   children: [
-                    _InstructionRow(number: '1', text: 'Play any video on your screen'),
-                    SizedBox(height: 12),
-                    _InstructionRow(number: '2', text: 'Tap scan to capture & scan'),
-                    SizedBox(height: 12),
-                    _InstructionRow(number: '3', text: 'Get AI vs Real verdict instantly'),
+                    _buildStep('1', 'Open any video (YouTube, Instagram, etc.)'),
+                    const SizedBox(height: 12),
+                    _buildStep('2', 'Tap the red SCAN button below'),
+                    const SizedBox(height: 12),
+                    _buildStep('3', 'Select "Entire screen" or an app'),
+                    const SizedBox(height: 12),
+                    _buildStep('4', 'Tap ⏺ to start scanning'),
+                    const SizedBox(height: 12),
+                    _buildStep('5', 'Tap ⏹ to finish & see results'),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 24),
-
-              TextButton.icon(
-                onPressed: () => Navigator.of(context).pushNamed('/settings'),
-                icon: const Icon(Icons.settings_outlined, color: Colors.white38, size: 18),
-                label: const Text('Settings', style: TextStyle(color: Colors.white38)),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 60,
+                child: ElevatedButton(
+                  onPressed: _isCapturing ? null : _startScanning,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _isCapturing
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.play_arrow_rounded, size: 28),
+                            SizedBox(width: 8),
+                            Text(
+                              'SCAN',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
               ),
+              const SizedBox(height: 16),
+              const Text(
+                'Make sure Athena can display over other apps',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white38,
+                ),
+              ),
+              const SizedBox(height: 24),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-class _InstructionRow extends StatelessWidget {
-  final String number;
-  final String text;
-  const _InstructionRow({required this.number, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
+  static Widget _buildStep(String number, String text) {
     return Row(
       children: [
         Container(
           width: 28,
           height: 28,
-          decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF6366F1)),
-          child: Center(child: Text(number, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+          decoration: BoxDecoration(
+            color: const Color(0xFF6366F1).withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              number,
+              style: const TextStyle(
+                color: Color(0xFF6366F1),
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
         ),
         const SizedBox(width: 12),
-        Expanded(child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 15))),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
+        ),
       ],
     );
   }
