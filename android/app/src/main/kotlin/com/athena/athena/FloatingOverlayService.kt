@@ -128,7 +128,14 @@ class FloatingOverlayService : Service() {
         try {
             windowManager?.addView(overlayView, params)
         } catch (e: Exception) {
-            // May fail without SYSTEM_ALERT_WINDOW permission
+            // May fail without SYSTEM_ALERT_WINDOW permission — notify user
+            try {
+                android.widget.Toast.makeText(
+                    this,
+                    "Athena needs Display Over Other Apps permission. Check Settings > Apps > Athena > Display over other apps.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } catch (_: Exception) {}
         }
 
         // Build the pill-shaped overlay
