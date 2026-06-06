@@ -10,6 +10,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -53,10 +54,26 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startCapture" -> {
-                    val permissionIntent = mediaProjectionManager?.createScreenCaptureIntent()
-                    startActivityForResult(permissionIntent, SCREEN_CAPTURE_REQUEST_CODE)
-                    pendingResult = result
-                    pendingMaxDuration = call.argument<Int>("max_duration_ms") ?: 30000
+                    // First check if we have SYSTEM_ALERT_WINDOW permission
+                    if (!Settings.canDrawOverlays(this)) {
+                        // Need to request overlay permission first
+                        val overlayIntent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:$packageName")
+                        )
+                        overlayIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(overlayIntent)
+                        result.success(false)
+                    } else {
+                        val permissionIntent = mediaProjectionManager?.createScreenCaptureIntent()
+                        if (permissionIntent == null) {
+                            result.success(false)
+                        } else {
+                            startActivityForResult(permissionIntent, SCREEN_CAPTURE_REQUEST_CODE)
+                            pendingResult = result
+                            pendingMaxDuration = call.argument<Int>("max_duration_ms") ?: 30000
+                        }
+                    }
                 }
                 "stopCapture" -> {
                     val intent = Intent(this, FloatingOverlayService::class.java)
