@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/screen_capture_service.dart';
 import '../../services/local_detection_service.dart';
-import '../../models/scan_result.dart';
 import '../../main.dart';
 import 'results_screen.dart';
 
