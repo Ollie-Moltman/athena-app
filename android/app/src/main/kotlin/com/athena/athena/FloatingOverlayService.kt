@@ -54,6 +54,9 @@ class FloatingOverlayService : Service() {
     private var scanBtn: ImageView? = null
     private var pausePlayBtn: ImageView? = null
     private var finishBtn: ImageView? = null
+    private var scanBtnWrapper: FrameLayout? = null
+    private var pauseBtnWrapper: FrameLayout? = null
+    private var finishBtnWrapper: FrameLayout? = null
     private var timerText: TextView? = null
     private var statusText: TextView? = null
     private var recDot: TextView? = null
@@ -176,55 +179,54 @@ class FloatingOverlayService : Service() {
         // SCAN button (red circle with ⏺ symbol)
         scanBtn = ImageView(this).apply {
             setBackgroundColor(0xFFF85149.toInt())
-            setImageResource(android.R.drawable.ic_media_play) // fallback; we use text overlay below
             alpha = 1f
         }
-        val scanBtnWrapper = FrameLayout(this)
-        scanBtnWrapper.layoutParams = LinearLayout.LayoutParams(56, 56).apply { marginEnd = 16 }
+        scanBtnWrapper = FrameLayout(this)
+        scanBtnWrapper?.layoutParams = LinearLayout.LayoutParams(56, 56).apply { marginEnd = 16 }
         val scanLabel = TextView(this).apply {
             text = "⏺"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 22f
             gravity = Gravity.CENTER
         }
-        scanBtnWrapper.addView(scanBtn, FrameLayout.LayoutParams(56, 56).apply { gravity = Gravity.CENTER })
-        scanBtnWrapper.addView(scanLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
-        scanBtnWrapper.setOnClickListener { sendBroadcast(Intent(ACTION_SCAN)) }
-
+        scanBtnWrapper?.addView(scanBtn, FrameLayout.LayoutParams(56, 56).apply { gravity = Gravity.CENTER })
+        scanBtnWrapper?.addView(scanLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        scanBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_SCAN)) }
 
         // PAUSE button (purple circle with ⏸)
         pausePlayBtn = ImageView(this).apply {
             setBackgroundColor(0xFF8B5CF6.toInt())
             alpha = 0.5f
         }
-        val pauseBtnWrapper = FrameLayout(this)
-        pauseBtnWrapper.layoutParams = LinearLayout.LayoutParams(48, 48).apply { marginEnd = 16 }
+        pauseBtnWrapper = FrameLayout(this)
+        pauseBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48).apply { marginEnd = 16 }
         val pauseLabel = TextView(this).apply {
             text = "⏸"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 18f
             gravity = Gravity.CENTER
         }
-        pauseBtnWrapper.addView(pausePlayBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
-        pauseBtnWrapper.addView(pauseLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
-        pauseBtnWrapper.setOnClickListener { sendBroadcast(Intent(ACTION_PAUSE_PLAY)) }
+        pauseBtnWrapper?.addView(pausePlayBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        pauseBtnWrapper?.addView(pauseLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        pauseBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_PAUSE_PLAY)) }
 
         // FINISH button (green circle with ✕)
         finishBtn = ImageView(this).apply {
             setBackgroundColor(0xFF10B981.toInt())
             alpha = 0.5f
         }
-        val finishBtnWrapper = FrameLayout(this)
-        finishBtnWrapper.layoutParams = LinearLayout.LayoutParams(48, 48)
+        finishBtnWrapper = FrameLayout(this)
+        finishBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48)
         val finishLabel = TextView(this).apply {
             text = "✕"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 18f
             gravity = Gravity.CENTER
         }
-        finishBtnWrapper.addView(finishBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
-        finishBtnWrapper.addView(finishLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
-        finishBtnWrapper.setOnClickListener { sendBroadcast(Intent(ACTION_FINISH)) }
+        finishBtnWrapper?.addView(finishBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        finishBtnWrapper?.addView(finishLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
+        finishBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_FINISH)) }
+
 
         btnRow.addView(scanBtnWrapper)
         btnRow.addView(pauseBtnWrapper)
@@ -277,13 +279,13 @@ class FloatingOverlayService : Service() {
 
         // Update UI
         scanBtn?.alpha = 0.5f
-        scanBtn?.isEnabled = false
+        scanBtnWrapper?.isEnabled = false
         pausePlayBtn?.alpha = 1f
-        pausePlayBtn?.isEnabled = true
+        pauseBtnWrapper?.isEnabled = true
         finishBtn?.alpha = 1f
-        finishBtn?.isEnabled = true
+        finishBtnWrapper?.isEnabled = true
         statusText?.text = "Scanning"
-        recDot?.setBackgroundColor(0xFFF85149.toInt())
+        recDot?.setTextColor(0xFFF85149.toInt())
 
         // Cancel any existing auto-close timer
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
@@ -363,11 +365,11 @@ class FloatingOverlayService : Service() {
         isCapturing = false
         isPaused = false
         scanBtn?.alpha = 1f
-        scanBtn?.isEnabled = true
+        scanBtnWrapper?.isEnabled = true
         pausePlayBtn?.alpha = 0.5f
-        pausePlayBtn?.isEnabled = false
+        pauseBtnWrapper?.isEnabled = false
         finishBtn?.alpha = 0.5f
-        finishBtn?.isEnabled = false
+        finishBtnWrapper?.isEnabled = false
         statusText?.text = "Done ${capturedFrames.size} frames"
         timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
