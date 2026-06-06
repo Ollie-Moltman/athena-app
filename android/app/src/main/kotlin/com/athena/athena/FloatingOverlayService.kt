@@ -50,9 +50,10 @@ class FloatingOverlayService : Service() {
     private var elapsedSeconds = 0
     private var timerRunnable: Runnable? = null
 
-    // UI refs
+    // UI refs — all buttons stored as class members so we can modify alpha/text
     private var scanBtn: ImageView? = null
     private var pausePlayBtn: ImageView? = null
+    private var cancelBtnBg: ImageView? = null  // FIXED: was local var, now class member
     private var scanBtnWrapper: FrameLayout? = null
     private var pauseBtnWrapper: FrameLayout? = null
     private var cancelBtnWrapper: FrameLayout? = null
@@ -102,7 +103,6 @@ class FloatingOverlayService : Service() {
         if (resultCode == Activity.RESULT_OK && data != null) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
-            // Create overlay immediately — user taps SCAN to begin actual capture
             createOverlayView()
             updateNotification("Ready — tap SCAN to begin")
         } else {
@@ -149,7 +149,7 @@ class FloatingOverlayService : Service() {
         // Main container — solid dark background, clearly visible
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF1A1A2E.toInt())  // Solid dark, no transparency
+            setBackgroundColor(0xFF1A1A2E.toInt())
             setPadding(24, 20, 24, 20)
         }
 
@@ -193,7 +193,7 @@ class FloatingOverlayService : Service() {
         topRow.addView(statusText)
         topRow.addView(timerText)
 
-        // Button row — LARGE circular buttons (96dp) with text labels below
+        // Button row — LARGE circular buttons with text labels below
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -204,7 +204,7 @@ class FloatingOverlayService : Service() {
         scanBtnWrapper?.layoutParams = LinearLayout.LayoutParams(96, 96).apply { marginEnd = 24 }
         scanBtn = ImageView(this).apply {
             setBackgroundColor(0xFFF85149.toInt())
-            alpha = 1f
+            alpha = 1f  // FIXED: all buttons start at full opacity
         }
         scanLabel = TextView(this).apply {
             text = "⏺"
@@ -231,7 +231,7 @@ class FloatingOverlayService : Service() {
         pauseBtnWrapper?.layoutParams = LinearLayout.LayoutParams(80, 80).apply { marginEnd = 24 }
         pausePlayBtn = ImageView(this).apply {
             setBackgroundColor(0xFF8B5CF6.toInt())
-            alpha = 0.4f
+            alpha = 1f  // FIXED: was 0.4f, now fully visible
         }
         pauseLabel = TextView(this).apply {
             text = "⏸"
@@ -256,9 +256,9 @@ class FloatingOverlayService : Service() {
         // CANCEL button — green circle (68dp)
         cancelBtnWrapper = FrameLayout(this)
         cancelBtnWrapper?.layoutParams = LinearLayout.LayoutParams(80, 80)
-        val cancelBtnBg = ImageView(this).apply {
+        cancelBtnBg = ImageView(this).apply {  // FIXED: now class member, not local var
             setBackgroundColor(0xFF10B981.toInt())
-            alpha = 0.4f
+            alpha = 1f  // FIXED: was 0.4f, now fully visible
         }
         cancelLabel = TextView(this).apply {
             text = "✕"
@@ -353,7 +353,7 @@ class FloatingOverlayService : Service() {
         isCapturing = true
         isPaused = false
 
-        // Update UI: scan button shows ⏹ (finish), pause/cancel become active
+        // Update UI: scan button shows ⏹ (finish), pause/cancel stay visible
         scanBtn?.alpha = 1f
         scanLabel?.text = "⏹"
         scanTextLabel?.text = "FINISH"
@@ -362,7 +362,7 @@ class FloatingOverlayService : Service() {
         pauseBtnWrapper?.isEnabled = true
         pauseLabel?.text = "⏸"
         pauseTextLabel?.text = "PAUSE"
-        cancelBtnWrapper?.alpha = 1f
+        cancelBtnBg?.alpha = 1f  // FIXED: was cancelBtnWrapper?.alpha (wrong target)
         cancelBtnWrapper?.isEnabled = true
         statusText?.text = "Recording"
         recDot?.setTextColor(0xFFF85149.toInt())
@@ -452,11 +452,11 @@ class FloatingOverlayService : Service() {
         scanLabel?.text = "⏺"
         scanTextLabel?.text = "START"
         scanBtnWrapper?.isEnabled = true
-        pausePlayBtn?.alpha = 0.4f
+        pausePlayBtn?.alpha = 1f
         pauseBtnWrapper?.isEnabled = false
         pauseLabel?.text = "⏸"
         pauseTextLabel?.text = "PAUSE"
-        cancelBtnWrapper?.alpha = 0.4f
+        cancelBtnBg?.alpha = 1f  // FIXED: was cancelBtnWrapper?.alpha (wrong target)
         cancelBtnWrapper?.isEnabled = false
         statusText?.text = "Done — ${capturedFrames.size} frames captured"
         timerRunnable?.let { handler.removeCallbacks(it) }
@@ -484,11 +484,11 @@ class FloatingOverlayService : Service() {
         scanLabel?.text = "⏺"
         scanTextLabel?.text = "START"
         scanBtnWrapper?.isEnabled = true
-        pausePlayBtn?.alpha = 0.4f
+        pausePlayBtn?.alpha = 1f
         pauseBtnWrapper?.isEnabled = false
         pauseLabel?.text = "⏸"
         pauseTextLabel?.text = "PAUSE"
-        cancelBtnWrapper?.alpha = 0.4f
+        cancelBtnBg?.alpha = 1f  // FIXED: was cancelBtnWrapper?.alpha (wrong target)
         cancelBtnWrapper?.isEnabled = false
         statusText?.text = "Cancelled — no analysis"
         timerRunnable?.let { handler.removeCallbacks(it) }
