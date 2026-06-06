@@ -280,6 +280,19 @@ class FloatingOverlayService : Service() {
     private fun startScanning() {
         if (isCapturing) return
 
+        // Guard: need mediaProjection to capture
+        if (mediaProjection == null) {
+            statusText?.text = "Permission needed"
+            try {
+                android.widget.Toast.makeText(
+                    this,
+                    "Screen capture permission required. Please try again.",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            } catch (_: Exception) {}
+            return
+        }
+
         // Set up MediaProjection + ImageReader if not already done
         if (imageReader == null) {
             setupCapture()
