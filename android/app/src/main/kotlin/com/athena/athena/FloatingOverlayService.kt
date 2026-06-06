@@ -62,6 +62,10 @@ class FloatingOverlayService : Service() {
     private var scanLabel: TextView? = null
     private var pauseLabel: TextView? = null
     private var cancelLabel: TextView? = null
+    // Text labels below buttons
+    private var scanTextLabel: TextView? = null
+    private var pauseTextLabel: TextView? = null
+    private var cancelTextLabel: TextView? = null
 
     private val frameBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -132,7 +136,6 @@ class FloatingOverlayService : Service() {
         try {
             windowManager?.addView(overlayView, params)
         } catch (e: Exception) {
-            // May fail without SYSTEM_ALERT_WINDOW permission — notify user
             try {
                 android.widget.Toast.makeText(
                     this,
@@ -140,108 +143,142 @@ class FloatingOverlayService : Service() {
                     android.widget.Toast.LENGTH_LONG
                 ).show()
             } catch (_: Exception) {}
+            return
         }
 
-        // Build the pill-shaped overlay
+        // Container: rounded dark pill with padding
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xE61A1A2E.toInt())
-            setPadding(20, 16, 20, 16)
+            setBackgroundColor(0xCC1A1A2E.toInt())  // Dark with slight transparency
+            setPadding(32, 24, 32, 24)
         }
 
         // Top row: rec dot + status + timer
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 12)
+            setPadding(0, 0, 0, 20)
         }
 
-        // Red rec dot (small square)
         recDot = TextView(this).apply {
-            text = "■"
+            text = "●"
             setTextColor(0xFFF85149.toInt())
-            textSize = 10f
+            textSize = 16f
+            setPadding(0, 0, 12, 0)
         }
-        (recDot!!.layoutParams as LinearLayout.LayoutParams).marginEnd = 8
 
         statusText = TextView(this).apply {
             text = "Ready"
             setTextColor(0xFFA0A0A0.toInt())
-            textSize = 13f
+            textSize = 15f
         }
 
         timerText = TextView(this).apply {
             text = "0:00"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 13f
-            setPadding(16, 0, 16, 0)
+            textSize = 15f
+            setPadding(24, 0, 0, 0)
         }
 
         topRow.addView(recDot)
         topRow.addView(statusText)
         topRow.addView(timerText)
 
-        // Button row
+        // Button row — large circular icon buttons with text labels
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
 
-        // SCAN button (red circle with ⏺ symbol)
+        // Each button is a vertical stack: Circle button + text label below
+
+        // SCAN / FINISH button — larger (80dp), red background
+        scanBtnWrapper = FrameLayout(this)
+        scanBtnWrapper?.layoutParams = LinearLayout.LayoutParams(88, 88).apply { marginEnd = 32 }
         scanBtn = ImageView(this).apply {
             setBackgroundColor(0xFFF85149.toInt())
-            alpha = 1f
         }
-        scanBtnWrapper = FrameLayout(this)
-        scanBtnWrapper?.layoutParams = LinearLayout.LayoutParams(56, 56).apply { marginEnd = 16 }
         scanLabel = TextView(this).apply {
             text = "⏺"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 22f
+            textSize = 32f
             gravity = Gravity.CENTER
         }
-        scanBtnWrapper?.addView(scanBtn, FrameLayout.LayoutParams(56, 56).apply { gravity = Gravity.CENTER })
+        scanBtnWrapper?.addView(scanBtn, FrameLayout.LayoutParams(72, 72).apply { gravity = Gravity.CENTER })
         scanBtnWrapper?.addView(scanLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
         scanBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_SCAN)) }
 
-        // PAUSE button (purple circle with ⏸)
+        // Label below scan button
+        scanTextLabel = TextView(this).apply {
+            text = "START"
+            setTextColor(0xFFF85149.toInt())
+            textSize = 11f
+            gravity = Gravity.CENTER
+        }
+
+        // PAUSE / RESUME button — purple, 64dp
+        pauseBtnWrapper = FrameLayout(this)
+        pauseBtnWrapper?.layoutParams = LinearLayout.LayoutParams(72, 72).apply { marginEnd = 32 }
         pausePlayBtn = ImageView(this).apply {
             setBackgroundColor(0xFF8B5CF6.toInt())
             alpha = 0.5f
         }
-        pauseBtnWrapper = FrameLayout(this)
-        pauseBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48).apply { marginEnd = 16 }
         pauseLabel = TextView(this).apply {
             text = "⏸"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 18f
+            textSize = 26f
             gravity = Gravity.CENTER
         }
-        pauseBtnWrapper?.addView(pausePlayBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        pauseBtnWrapper?.addView(pausePlayBtn, FrameLayout.LayoutParams(56, 56).apply { gravity = Gravity.CENTER })
         pauseBtnWrapper?.addView(pauseLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
         pauseBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_PAUSE_PLAY)) }
 
-        // FINISH button (green circle with ✕)
-        val cancelBtn = ImageView(this).apply {
+        // Label below pause button
+        pauseTextLabel = TextView(this).apply {
+            text = "PAUSE"
+            setTextColor(0xFF8B5CF6.toInt())
+            textSize = 11f
+            gravity = Gravity.CENTER
+        }
+
+        // CANCEL button — green, 64dp
+        cancelBtnWrapper = FrameLayout(this)
+        cancelBtnWrapper?.layoutParams = LinearLayout.LayoutParams(72, 72)
+        val cancelBtnBg = ImageView(this).apply {
             setBackgroundColor(0xFF10B981.toInt())
             alpha = 0.5f
         }
-        cancelBtnWrapper = FrameLayout(this)
-        cancelBtnWrapper?.layoutParams = LinearLayout.LayoutParams(48, 48)
         cancelLabel = TextView(this).apply {
             text = "✕"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 18f
+            textSize = 26f
             gravity = Gravity.CENTER
         }
-        cancelBtnWrapper?.addView(cancelBtn, FrameLayout.LayoutParams(48, 48).apply { gravity = Gravity.CENTER })
+        cancelBtnWrapper?.addView(cancelBtnBg, FrameLayout.LayoutParams(56, 56).apply { gravity = Gravity.CENTER })
         cancelBtnWrapper?.addView(cancelLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { gravity = Gravity.CENTER })
         cancelBtnWrapper?.setOnClickListener { sendBroadcast(Intent(ACTION_CANCEL)) }
 
+        // Label below cancel button
+        cancelTextLabel = TextView(this).apply {
+            text = "CANCEL"
+            setTextColor(0xFF10B981.toInt())
+            textSize = 11f
+            gravity = Gravity.CENTER
+        }
 
-        btnRow.addView(scanBtnWrapper)
-        btnRow.addView(pauseBtnWrapper)
-        btnRow.addView(cancelBtnWrapper)
+        // Wrap each button+label in a vertical LinearLayout
+        fun buttonWithLabel(wrapper: FrameLayout, label: TextView): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                addView(wrapper)
+                addView(label)
+            }
+        }
+
+        btnRow.addView(buttonWithLabel(scanBtnWrapper!!, scanTextLabel))
+        btnRow.addView(buttonWithLabel(pauseBtnWrapper!!, pauseTextLabel))
+        btnRow.addView(buttonWithLabel(cancelBtnWrapper!!, cancelTextLabel))
 
         container.addView(topRow)
         container.addView(btnRow)
@@ -304,10 +341,12 @@ class FloatingOverlayService : Service() {
         // Update UI: scan button shows ⏹ (finish), pause/cancel become active
         scanBtn?.alpha = 1f
         scanLabel?.text = "⏹"
+        scanTextLabel?.text = "FINISH"
         scanBtnWrapper?.isEnabled = true
         pausePlayBtn?.alpha = 1f
         pauseBtnWrapper?.isEnabled = true
         pauseLabel?.text = "⏸"
+        pauseTextLabel?.text = "PAUSE"
         cancelBtnWrapper?.alpha = 1f
         cancelBtnWrapper?.isEnabled = true
         statusText?.text = "Recording"
@@ -369,10 +408,12 @@ class FloatingOverlayService : Service() {
         if (isPaused) {
             statusText?.text = "Paused"
             pauseLabel?.text = "▶"
+            pauseTextLabel?.text = "RESUME"
             timerRunnable?.let { handler.removeCallbacks(it) }
         } else {
             statusText?.text = "Recording"
             pauseLabel?.text = "⏸"
+            pauseTextLabel?.text = "PAUSE"
             // Resume timer
             timerRunnable = object : Runnable {
                 override fun run() {
@@ -394,9 +435,12 @@ class FloatingOverlayService : Service() {
         isPaused = false
         scanBtn?.alpha = 1f
         scanLabel?.text = "⏺"
+        scanTextLabel?.text = "START"
         scanBtnWrapper?.isEnabled = true
         pausePlayBtn?.alpha = 0.5f
         pauseBtnWrapper?.isEnabled = false
+        pauseLabel?.text = "⏸"
+        pauseTextLabel?.text = "PAUSE"
         cancelBtnWrapper?.alpha = 0.5f
         cancelBtnWrapper?.isEnabled = false
         statusText?.text = "Done ${capturedFrames.size} frames"
@@ -423,9 +467,12 @@ class FloatingOverlayService : Service() {
         isPaused = false
         scanBtn?.alpha = 1f
         scanLabel?.text = "⏺"
+        scanTextLabel?.text = "START"
         scanBtnWrapper?.isEnabled = true
         pausePlayBtn?.alpha = 0.5f
         pauseBtnWrapper?.isEnabled = false
+        pauseLabel?.text = "⏸"
+        pauseTextLabel?.text = "PAUSE"
         cancelBtnWrapper?.alpha = 0.5f
         cancelBtnWrapper?.isEnabled = false
         statusText?.text = "Cancelled"
