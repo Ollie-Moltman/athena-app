@@ -92,6 +92,9 @@ class _ScanningScreenState extends State<ScanningScreen>
   }
 
   Future<void> _startDemoCapture() async {
+    // Reset any stale capture state before starting demo
+    _captureService.stopCapture();
+
     if (!mounted) return;
     setState(() {
       _currentLayer = 'Demo mode — analyzing...';

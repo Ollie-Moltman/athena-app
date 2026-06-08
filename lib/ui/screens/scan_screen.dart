@@ -30,9 +30,14 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _permissionDenied) {
-      _permissionDenied = false;
-      _startScanning();
+    if (state == AppLifecycleState.resumed) {
+      // Reset capturing state when returning from Settings redirect,
+      // then retry the scan if we were waiting for permission
+      if (_isCapturing && _permissionDenied) {
+        setState(() => _isCapturing = false);
+        _permissionDenied = false;
+        _startScanning();
+      }
     }
   }
 
@@ -232,7 +237,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Make sure Athena can display over other apps',
+                'On first use: tap SCAN → Settings → enable overlay → tap each app you want to scan',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.white38,

@@ -107,8 +107,12 @@ class FloatingOverlayService : Service() {
             createOverlayView()
             updateNotification("Ready — tap SCAN to begin")
         } else {
-            createOverlayView()
+            // No valid screen capture permission — stop immediately.
+            // The overlay would be non-functional (mediaProjection is null
+            // and startScanning returns early). Stopping prevents confusion
+            // when ScanningScreen falls back to demo mode.
             updateNotification("Permission denied")
+            stopSelf()
         }
 
         return START_STICKY
@@ -341,7 +345,9 @@ class FloatingOverlayService : Service() {
         if (isCapturing) return
 
         if (mediaProjection == null) {
-            statusText?.text = "Permission needed"
+            statusText?.text = "Permission denied — tap START to retry"
+            statusText?.setTextColor(Color.parseColor("#FFF85149"))
+            recDot?.setTextColor(Color.parseColor("#FFAAAAAA"))
             try {
                 Toast.makeText(this, "Screen capture permission required. Please try again.", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {}

@@ -144,6 +144,9 @@ class MainActivity : FlutterActivity() {
                 pendingResult?.success(true)
             } else {
                 pendingResult?.success(false)
+            // Stop any stale FloatingOverlayService so retry works cleanly
+            val stopIntent = Intent(this, FloatingOverlayService::class.java)
+            stopService(stopIntent)
             }
             pendingResult = null
         }
