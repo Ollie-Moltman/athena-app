@@ -4,7 +4,8 @@ import 'package:image/image.dart' as img;
 
 /// Service to trigger native Android screen capture via MediaProjection.
 /// Frames arrive via EventChannel as raw RGBA bytes and are converted to PNG
-/// before being stored. Scan completion is signaled via a broadcast intent.
+/// before being stored. The overlay-ready signal ("scan_ready") and scan
+/// completion (null) also arrive via the same EventChannel.
 class ScreenCaptureService {
   static const MethodChannel _channel = MethodChannel('com.athena.app/capture');
   static const EventChannel _frameChannel =
@@ -23,6 +24,10 @@ class ScreenCaptureService {
   StreamSubscription? _frameSubscription;
   bool _captureStarted = false;
 
+  // Emits when the native overlay is ready (FloatingOverlayService created its view)
+  final StreamController<void> _scanReadyController = StreamController<void>.broadcast();
+  Stream<void> get scanReady => _scanReadyController.stream;
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// List of captured PNG-encoded frames.
@@ -30,8 +35,7 @@ class ScreenCaptureService {
 
   /// Returns a Future that completes when the native side signals scan complete.
   /// The native side calls FloatingOverlayService.finishScanning() which sends
-  /// the SCAN_COMPLETE broadcast; we listen for it via the frame EventChannel
-  /// (which closes on scan end) or via a dedicated broadcast receiver.
+  /// the scan complete signal via the EventChannel.
   Future<void> waitForScanComplete() => _scanCompleter.future;
 
   /// Request screen capture permission and start capturing frames.
@@ -63,14 +67,20 @@ class ScreenCaptureService {
         'max_duration_ms': maxDurationMs,
       });
 
-      // Listen for frames via EventChannel
+      // Listen for frames and control events via EventChannel
       _frameSubscription = _frameChannel.receiveBroadcastStream().listen(
         (dynamic data) {
           if (data == null) {
-            // Null signals end of capture — complete the scan future
+            // null signals end of capture
             if (!_scanCompleter.isCompleted) {
               _scanCompleter.complete();
             }
+            return;
+          }
+
+          if (data is String && data == 'scan_ready') {
+            // Overlay is ready — notify listeners so they can navigate to ScanningScreen
+            _scanReadyController.add(null);
             return;
           }
 
@@ -122,6 +132,10 @@ class ScreenCaptureService {
     } on PlatformException catch (_) {
       return false;
     }
+  }
+
+  void dispose() {
+    _scanReadyController.close();
   }
 
   // ── RGBA → PNG conversion ───────────────────────────────────────────────────

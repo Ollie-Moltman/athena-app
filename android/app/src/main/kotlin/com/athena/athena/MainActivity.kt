@@ -21,30 +21,11 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.athena.app/capture"
     private val FRAME_CHANNEL = "com.athena.app/capture/frames"
 
+
     private var mediaProjectionManager: MediaProjectionManager? = null
     private var mediaProjection: MediaProjection? = null
-    private var frameEventSink: EventChannel.EventSink? = null
-    private val handler = Handler(Looper.getMainLooper())
-
     private var pendingResult: MethodChannel.Result? = null
     private var pendingMaxDuration = 30000
-
-    // BroadcastReceiver to receive frames from FloatingOverlayService
-    private val frameReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val frameData = intent?.getByteArrayExtra("frame_data")
-            if (frameData != null && frameEventSink != null) {
-                handler.post {
-                    if (frameData.isEmpty()) {
-                        // Empty frame = scan complete signal → resolve Flutter's waitForScanComplete()
-                        frameEventSink?.success(null)
-                    } else {
-                        frameEventSink?.success(frameData)
-                    }
-                }
-            }
-        }
-    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -63,17 +44,33 @@ class MainActivity : FlutterActivity() {
                         )
                         overlayIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(overlayIntent)
-                        result.success(false)
+                        // Set flag so onResume() retries capture after user returns
+                        pendingOverlayRetry = true
+                        pendingResult = result
+                        pendingMaxDuration = call.argument<Int>("max_duration_ms") ?: 30000
+                        // Return early — result will be resolved after user grants overlay
+                        result.success("overlay_required")
                     } else {
+                        // Overlay already granted — go straight to MediaProjection
                         val permissionIntent = mediaProjectionManager?.createScreenCaptureIntent()
                         if (permissionIntent == null) {
-                            result.success(false)
+                            result.success("denied")
                         } else {
                             startActivityForResult(permissionIntent, SCREEN_CAPTURE_REQUEST_CODE)
                             pendingResult = result
                             pendingMaxDuration = call.argument<Int>("max_duration_ms") ?: 30000
+                            // Don't resolve yet — wait for onActivityResult
                         }
                     }
+                }
+                "openPermissionSettings" -> {
+                    val overlayIntent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")
+                    )
+                    overlayIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(overlayIntent)
+                    result.success(null)
                 }
                 "stopCapture" -> {
                     val intent = Intent(this, FloatingOverlayService::class.java)
@@ -99,16 +96,13 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, FRAME_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    frameEventSink = events
-                    val filter = IntentFilter("com.athena.app.FRAME_CAPTURED")
-                    registerReceiver(frameReceiver, filter)
+                    // Register the EventSink with our singleton so FloatingOverlayService
+                    // can call it directly, bypassing Android's 1MB broadcast limit
+                    FrameBroadcaster.frameEventSink = events
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    frameEventSink = null
-                    try {
-                        unregisterReceiver(frameReceiver)
-                    } catch (_: Exception) {}
+                    FrameBroadcaster.frameEventSink = null
                 }
             }
         )
@@ -141,23 +135,48 @@ class MainActivity : FlutterActivity() {
                     putExtra("maxDurationMs", pendingMaxDuration)
                 }
                 startForegroundService(serviceIntent)
-                pendingResult?.success(true)
+                pendingResult?.success("ok")
             } else {
-                pendingResult?.success(false)
-            // Stop any stale FloatingOverlayService so retry works cleanly
-            val stopIntent = Intent(this, FloatingOverlayService::class.java)
-            stopService(stopIntent)
+                // User denied screen capture
+                pendingResult?.success("denied")
+                pendingResult = null
+                // Stop any stale FloatingOverlayService so retry works cleanly
+                val stopIntent = Intent(this, FloatingOverlayService::class.java)
+                stopService(stopIntent)
             }
-            pendingResult = null
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            unregisterReceiver(frameReceiver)
-        } catch (_: Exception) {}
+        FrameBroadcaster.frameEventSink = null
         mediaProjection?.stop()
+    }
+
+    // Track whether we need to retry capture after returning from overlay settings
+    private var pendingOverlayRetry = false
+
+    override fun onResume() {
+        super.onResume()
+        if (pendingOverlayRetry && Settings.canDrawOverlays(this)) {
+            pendingOverlayRetry = false
+            // Overlay permission now granted — retry screen capture flow.
+            val r = pendingResult
+            if (r != null) {
+                val permissionIntent = mediaProjectionManager?.createScreenCaptureIntent()
+                if (permissionIntent == null) {
+                    r.success("denied")
+                    pendingResult = null
+                } else {
+                    // Start the MediaProjection intent. pendingResult must survive
+                    // the startActivityForResult call so onActivityResult can use it.
+                    startActivityForResult(permissionIntent, SCREEN_CAPTURE_REQUEST_CODE)
+                    // Don't null out pendingResult here — onActivityResult needs it.
+                    // If onActivityResult never fires (crash, etc.), pendingResult
+                    // will be cleaned up on the next startCapture call.
+                }
+            }
+        }
     }
 
     companion object {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:athena/main.dart';
+import 'package:athena/services/screen_capture_service.dart';
 import 'scanning_screen.dart';
+import 'dart:async';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -13,8 +15,10 @@ class ScanScreen extends StatefulWidget {
 class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   bool _isCapturing = false;
   bool _permissionDenied = false;
+  StreamSubscription? _scanReadySub;
 
   static const MethodChannel _channel = MethodChannel('com.athena.app/capture');
+  final ScreenCaptureService _captureService = ScreenCaptureService();
 
   @override
   void initState() {
@@ -25,6 +29,8 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scanReadySub?.cancel();
+    _captureService.dispose();
     super.dispose();
   }
 
@@ -38,6 +44,17 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         _permissionDenied = false;
         _startScanning();
       }
+    }
+  }
+
+  /// Check current permission state and update UI.
+  Future<bool> _checkPermissions() async {
+    try {
+      // hasPermission returns true only after MediaProjection was granted.
+      final hasMediaProjection = await _channel.invokeMethod<bool>('hasPermission') ?? false;
+      return hasMediaProjection;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -56,41 +73,93 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
     setState(() => _isCapturing = true);
 
+    // Listen for the overlay-ready signal from FloatingOverlayService.
+    // When the overlay is created, FloatingOverlayService.sendScanReady() is called
+    // which sends "scan_ready" through the EventChannel. We navigate then.
+    _scanReadySub?.cancel();
+    _scanReadySub = _captureService.scanReady.listen((_) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const ScanningScreen(permissionGranted: true),
+        ),
+      ).then((_) {
+        if (mounted) setState(() => _isCapturing = false);
+      });
+    });
+
     try {
-      final granted = await _channel.invokeMethod<bool>('startCapture', {
+      // Native returns:
+      //   "overlay_required" = overlay permission missing, sent to Settings
+      //   anything else (including void/null) = permission flow started,
+      //       overlay will be shown; "scan_ready" event will follow.
+      //   "denied" = user denied
+      // A PlatformException is thrown if the method is not implemented.
+      final result = await _channel.invokeMethod<String>('startCapture', {
         'max_duration_ms': settingsService.maxDurationMs,
       });
 
       if (!mounted) return;
 
-      if (granted == true) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const ScanningScreen(permissionGranted: true),
+      if (result == 'overlay_required') {
+        // Overlay permission was missing — user was sent to Settings.
+        // They need to grant it and come back to scan.
+        // Cancel the scanReady listener since no overlay will appear.
+        _scanReadySub?.cancel();
+        _scanReadySub = null;
+        setState(() => _isCapturing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📱 Please enable "Display over other apps" in Settings > Apps > Athena, then tap SCAN again'),
+            backgroundColor: Color(0xFFF59E0B),
+            duration: Duration(seconds: 6),
           ),
-        ).then((_) => setState(() => _isCapturing = false));
-      } else {
+        );
+      } else if (result == 'denied') {
+        _scanReadySub?.cancel();
+        _scanReadySub = null;
         setState(() {
           _isCapturing = false;
           _permissionDenied = true;
         });
-        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('⚠️ Enable "Display over other apps" in Settings > Apps > Athena, then tap SCAN again'),
+            content: Text('⚠️ Screen capture denied. Please grant permission and try again.'),
             backgroundColor: Color(0xFFF59E0B),
             duration: Duration(seconds: 5),
           ),
         );
       }
+      // For any other result (ok, null, etc.) we just wait for scan_ready
     } on PlatformException catch (_) {
+      // Method not implemented or other error
+      _scanReadySub?.cancel();
+      _scanReadySub = null;
       if (!mounted) return;
       setState(() => _isCapturing = false);
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => const ScanningScreen(permissionGranted: false),
         ),
-      ).then((_) => setState(() => _isCapturing = false));
+      ).then((_) {
+        if (mounted) setState(() => _isCapturing = false);
+      });
+    }
+  }
+
+  /// Open system app settings page so user can grant overlay permission manually.
+  Future<void> _openPermissionSettings() async {
+    try {
+      await _channel.invokeMethod('openPermissionSettings');
+    } on PlatformException catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open settings. Please open Settings > Apps > Athena manually.'),
+          backgroundColor: Color(0xFFF59E0B),
+          duration: Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -236,11 +305,24 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 16),
+              // Dedicated permissions button — easy access to grant overlay permission
+              OutlinedButton.icon(
+                onPressed: _openPermissionSettings,
+                icon: const Icon(Icons.settings_applications, size: 18),
+                label: const Text('Grant Permissions'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white54,
+                  side: const BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 8),
               const Text(
-                'On first use: tap SCAN → Settings → enable overlay → tap each app you want to scan',
+                'Enable "Display over other apps" for Athena to show the scanning overlay',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white38,
+                  fontSize: 11,
+                  color: Colors.white30,
                 ),
               ),
               const SizedBox(height: 24),

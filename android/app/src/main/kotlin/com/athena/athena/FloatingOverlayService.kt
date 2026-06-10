@@ -11,6 +11,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -32,6 +33,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 class FloatingOverlayService : Service() {
@@ -105,13 +107,15 @@ class FloatingOverlayService : Service() {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
             createOverlayView()
-            updateNotification("Ready — tap SCAN to begin")
+            // Notify Flutter that overlay is ready — Flutter should navigate to ScanningScreen.
+            // This is sent regardless of whether createOverlayView succeeded (it shows a toast on error).
+            notifyScanReady()
+            updateNotification("Ready — tap START to begin")
         } else {
             // No valid screen capture permission — stop immediately.
-            // The overlay would be non-functional (mediaProjection is null
-            // and startScanning returns early). Stopping prevents confusion
-            // when ScanningScreen falls back to demo mode.
             updateNotification("Permission denied")
+            // Notify Flutter so it can show an error state instead of waiting forever.
+            notifyScanReady()
             stopSelf()
         }
 
@@ -137,6 +141,7 @@ class FloatingOverlayService : Service() {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
@@ -398,7 +403,9 @@ class FloatingOverlayService : Service() {
         captureThread = Thread {
             while (isCapturing) {
                 if (!isPaused) {
-                    val image = imageReader?.acquireLatestImage()
+                    // Use acquireNextImage (blocks until image available) instead of
+                    // acquireLatestImage (returns null immediately if queue empty).
+                    val image = imageReader?.acquireNextImage()
                     if (image != null) {
                         val frame = imageToBytes(image)
                         image.close()
@@ -409,7 +416,7 @@ class FloatingOverlayService : Service() {
                     }
                 }
                 try {
-                    Thread.sleep(33)
+                    Thread.sleep(16)
                 } catch (e: InterruptedException) {
                     break
                 }
@@ -474,9 +481,10 @@ class FloatingOverlayService : Service() {
 
         broadcastScanComplete()
 
-        handler.postDelayed({
-            stopSelf()
-        }, 2000)
+        // Stop immediately — do NOT delay. The overlay is done and buttons are
+        // no longer valid. Delaying stopSelf() causes a race window where the
+        // user can tap START again and accidentally start a new scan.
+        stopSelf()
     }
 
     private fun cancelScanning() {
@@ -499,9 +507,7 @@ class FloatingOverlayService : Service() {
 
         broadcastScanComplete()
 
-        handler.postDelayed({
-            stopSelf()
-        }, 1500)
+        stopSelf()
     }
 
     private fun stopCapture() {
@@ -519,28 +525,45 @@ class FloatingOverlayService : Service() {
         return try {
             val plane = image.planes[0]
             val buffer: ByteBuffer = plane.buffer
+            buffer.rewind() // Reset to position 0 so copyPixelsFromBuffer reads correctly
             val remaining = buffer.remaining()
             if (remaining == 0) return null
-            val bytes = ByteArray(remaining)
-            buffer.get(bytes)
-            bytes
+
+            val width = image.width
+            val height = image.height
+
+            // RGBA_8888: copy raw RGBA bytes into ARGB_8888 Bitmap.
+            // Byte layout matches (R first), so colors are correct after copy.
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmap.copyPixelsFromBuffer(buffer)
+
+            // Resize to 1/2 resolution (1/4 pixels) — good enough for detection,
+            // keeps memory/bandwidth manageable
+            val scaled = Bitmap.createScaledBitmap(bitmap, width / 2, height / 2, true)
+            bitmap.recycle()
+
+            val stream = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, 75, stream)
+            scaled.recycle()
+            stream.toByteArray()
         } catch (e: Exception) {
             null
         }
     }
 
     private fun broadcastFrame(frame: ByteArray) {
-        val intent = Intent("com.athena.app.FRAME_CAPTURED").apply {
-            putExtra("frame_data", frame)
-        }
-        sendBroadcast(intent)
+        // Use singleton callback → direct to Flutter EventSink, no 1MB broadcast limit
+        FrameBroadcaster.sendFrame(frame)
     }
 
     private fun broadcastScanComplete() {
-        val intent = Intent("com.athena.app.FRAME_CAPTURED").apply {
-            putExtra("frame_data", ByteArray(0))
-        }
-        sendBroadcast(intent)
+        FrameBroadcaster.sendScanComplete()
+    }
+
+    private fun notifyScanReady() {
+        // Tell Flutter to navigate to ScanningScreen. Done after overlay creation
+        // so the overlay is already visible when the user sees ScanningScreen.
+        FrameBroadcaster.sendScanReady()
     }
 
     private fun createNotificationChannel() {
