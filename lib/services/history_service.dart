@@ -8,13 +8,13 @@ class HistoryService {
   static const String _KEY = 'scan_history';
   static const int MAX_ITEMS = 10;
 
-  final SharedPreferences _prefs;
+  final SharedPreferences? _prefs;
 
   HistoryService(this._prefs);
 
   /// Load all stored scan results, most recent first.
   List<ScanResult> loadAll() {
-    final raw = _prefs.getStringList(_KEY) ?? [];
+    final raw = _prefs?.getStringList(_KEY) ?? [];
     return raw
         .map((s) {
           try {
@@ -35,7 +35,7 @@ class HistoryService {
     // Trim to MAX_ITEMS
     final trimmed = list.take(MAX_ITEMS).toList();
 
-    await _prefs.setStringList(
+    await _prefs?.setStringList(
       _KEY,
       trimmed.map((r) => jsonEncode(_toJson(r))).toList(),
     );
@@ -50,11 +50,11 @@ class HistoryService {
 
   /// Clear all history.
   Future<void> clearAll() async {
-    await _prefs.remove(_KEY);
+    await _prefs?.remove(_KEY);
   }
 
   Future<void> _saveList(List<ScanResult> list) async {
-    await _prefs.setStringList(
+    await _prefs?.setStringList(
       _KEY,
       list.map((r) => jsonEncode(_toJson(r))).toList(),
     );

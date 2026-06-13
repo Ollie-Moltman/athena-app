@@ -17,13 +17,16 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  SharedPreferences? prefs;
   try {
-    final prefs = await SharedPreferences.getInstance();
-    settingsService = SettingsService(prefs);
-    historyService = HistoryService(prefs);
+    prefs = await SharedPreferences.getInstance();
   } catch (e) {
-    debugPrint('SharedPreferences init error (safe to ignore): $e');
+    debugPrint('SharedPreferences init error: $e — using in-memory fallback');
   }
+  // Pass null if SharedPreferences failed — services handle this gracefully
+  // with hardcoded defaults and no-op writes (history not persisted in this case).
+  settingsService = SettingsService(prefs);
+  historyService = HistoryService(prefs);
 
   runApp(const AthenaApp());
 }

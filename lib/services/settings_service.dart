@@ -11,16 +11,16 @@ class SettingsService {
   static const int DEFAULT_MAX_DURATION_MS = 20000; // 20 seconds
   static const String DEFAULT_QUALITY = '1080p';
 
-  final SharedPreferences _prefs;
+  final SharedPreferences? _prefs;
 
   SettingsService(this._prefs);
 
   // ── Max Scan Duration ──────────────────────────────────────────────────────
   /// Duration in milliseconds. Defaults to 20 seconds.
-  int get maxDurationMs => _prefs.getInt(_KEY_MAX_DURATION) ?? DEFAULT_MAX_DURATION_MS;
+  int get maxDurationMs => _prefs?.getInt(_KEY_MAX_DURATION) ?? DEFAULT_MAX_DURATION_MS;
 
   Future<void> setMaxDurationMs(int ms) async {
-    await _prefs.setInt(_KEY_MAX_DURATION, ms);
+    await _prefs?.setInt(_KEY_MAX_DURATION, ms);
   }
 
   String get maxDurationLabel {
@@ -30,10 +30,10 @@ class SettingsService {
 
   // ── Capture Quality ────────────────────────────────────────────────────────
   /// '720p', '1080p', or '4k'. Defaults to 1080p.
-  String get quality => _prefs.getString(_KEY_QUALITY) ?? DEFAULT_QUALITY;
+  String get quality => _prefs?.getString(_KEY_QUALITY) ?? DEFAULT_QUALITY;
 
   Future<void> setQuality(String q) async {
-    await _prefs.setString(_KEY_QUALITY, q);
+    await _prefs?.setString(_KEY_QUALITY, q);
   }
 
   String get qualityLabel {
@@ -47,28 +47,28 @@ class SettingsService {
   // ── Daily scan counter ─────────────────────────────────────────────────────
   /// Returns scans used today, resetting if the day has changed.
   int get scansUsedToday {
-    final date = _prefs.getString(_KEY_SCAN_DATE);
+    final date = _prefs?.getString(_KEY_SCAN_DATE);
     final today = _today();
     if (date != today) {
       // Reset for new day
-      _prefs.setString(_KEY_SCAN_DATE, today);
-      _prefs.setInt(_KEY_SCAN_COUNT, 0);
+      _prefs?.setString(_KEY_SCAN_DATE, today);
+      _prefs?.setInt(_KEY_SCAN_COUNT, 0);
       return 0;
     }
-    return _prefs.getInt(_KEY_SCAN_COUNT) ?? 0;
+    return _prefs?.getInt(_KEY_SCAN_COUNT) ?? 0;
   }
 
   int get scansRemaining => (5 - scansUsedToday).clamp(0, 5);
 
   Future<void> incrementScanCount() async {
     final today = _today();
-    final storedDate = _prefs.getString(_KEY_SCAN_DATE);
+    final storedDate = _prefs?.getString(_KEY_SCAN_DATE);
     if (storedDate != today) {
       // New day — reset
-      await _prefs.setString(_KEY_SCAN_DATE, today);
-      await _prefs.setInt(_KEY_SCAN_COUNT, 1);
+      await _prefs?.setString(_KEY_SCAN_DATE, today);
+      await _prefs?.setInt(_KEY_SCAN_COUNT, 1);
     } else {
-      await _prefs.setInt(_KEY_SCAN_COUNT, scansUsedToday + 1);
+      await _prefs?.setInt(_KEY_SCAN_COUNT, scansUsedToday + 1);
     }
   }
 
@@ -79,9 +79,9 @@ class SettingsService {
 
   // ── Reset all settings ─────────────────────────────────────────────────────
   Future<void> resetAll() async {
-    await _prefs.remove(_KEY_MAX_DURATION);
-    await _prefs.remove(_KEY_QUALITY);
-    await _prefs.remove(_KEY_SCAN_COUNT);
-    await _prefs.remove(_KEY_SCAN_DATE);
+    await _prefs?.remove(_KEY_MAX_DURATION);
+    await _prefs?.remove(_KEY_QUALITY);
+    await _prefs?.remove(_KEY_SCAN_COUNT);
+    await _prefs?.remove(_KEY_SCAN_DATE);
   }
 }
