@@ -320,30 +320,41 @@ class FloatingOverlayService : Service() {
 
     @SuppressLint("WrongConstant")
     private fun setupCapture() {
-        val metrics = DisplayMetrics()
-        windowManager?.defaultDisplay?.getMetrics(metrics)
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val dpi = metrics.densityDpi
+        try {
+            val metrics = DisplayMetrics()
+            windowManager?.defaultDisplay?.getMetrics(metrics)
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+            val dpi = metrics.densityDpi
 
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+            // Reduce resolution to 720p to prevent memory pressure
+            val captureWidth = minOf(width, 1280)
+            val captureHeight = minOf(height, 720)
 
-        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                stopCapture()
-            }
-        }, null)
+            imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 2)
 
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "AthenaCapture",
-            width, height, dpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, null
-        )
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    stopCapture()
+                }
+            }, null)
 
-        capturedFrames.clear()
-        captureStartTime = System.currentTimeMillis()
-        elapsedSeconds = 0
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "AthenaCapture",
+                captureWidth, captureHeight, dpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface, null, null
+            )
+
+            capturedFrames.clear()
+            captureStartTime = System.currentTimeMillis()
+            elapsedSeconds = 0
+        } catch (e: Exception) {
+            android.util.Log.e("AthenaOverlay", "setupCapture failed: ${e.message}", e)
+            statusText?.text = "Capture setup failed"
+            statusText?.setTextColor(Color.parseColor("#FFF85149"))
+            isCapturing = false
+        }
     }
 
     private fun startScanning() {
@@ -403,16 +414,24 @@ class FloatingOverlayService : Service() {
         captureThread = Thread {
             while (isCapturing) {
                 if (!isPaused) {
-                    // Use acquireNextImage (blocks until image available) instead of
-                    // acquireLatestImage (returns null immediately if queue empty).
-                    val image = imageReader?.acquireNextImage()
-                    if (image != null) {
-                        val frame = imageToBytes(image)
-                        image.close()
-                        if (frame != null) {
-                            capturedFrames.add(frame)
-                            broadcastFrame(frame)
+                    try {
+                        // Use acquireNextImage (blocks until image available) instead of
+                        // acquireLatestImage (returns null immediately if queue empty).
+                        val image = imageReader?.acquireNextImage()
+                        if (image != null) {
+                            try {
+                                val frame = imageToBytes(image)
+                                if (frame != null) {
+                                    capturedFrames.add(frame)
+                                    broadcastFrame(frame)
+                                }
+                            } finally {
+                                image.close()
+                            }
                         }
+                    } catch (e: Exception) {
+                        // Log but don't crash — keep capturing
+                        android.util.Log.e("AthenaCapture", "Frame capture error: ${e.message}", e)
                     }
                 }
                 try {
