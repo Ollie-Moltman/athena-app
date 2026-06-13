@@ -140,6 +140,7 @@ class MainActivity : FlutterActivity() {
                 // User denied screen capture
                 pendingResult?.success("denied")
                 pendingResult = null
+                pendingOverlayRetry = false
                 // Stop any stale FloatingOverlayService so retry works cleanly
                 val stopIntent = Intent(this, FloatingOverlayService::class.java)
                 stopService(stopIntent)
@@ -175,6 +176,11 @@ class MainActivity : FlutterActivity() {
                     // If onActivityResult never fires (crash, etc.), pendingResult
                     // will be cleaned up on the next startCapture call.
                 }
+            } else {
+                // pendingResult is null means user went to Settings but didn't grant overlay
+                // and returned. Clear the retry flag so next SCAN tap starts fresh.
+                android.util.Log.w("Athena", "pendingResult was null on overlay retry — clearing flag")
+                pendingResult = null
             }
         }
     }
