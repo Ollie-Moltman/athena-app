@@ -65,7 +65,7 @@ class _ScanningScreenState extends State<ScanningScreen>
           _logLines.add('Error: $error');
         });
       },
-      maxDurationMs: settingsService.maxDurationMs,
+      maxDurationMs: settingsService?.maxDurationMs ?? 20000,
     );
 
     if (!mounted) return;

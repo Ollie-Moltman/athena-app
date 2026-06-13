@@ -59,6 +59,18 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _startScanning() async {
+    if (settingsService == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Settings unavailable. Please restart the app.'),
+          backgroundColor: Color(0xFFEF4444),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     if (settingsService.scansRemaining <= 0) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -96,7 +108,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       //   "denied" = user denied
       // A PlatformException is thrown if the method is not implemented.
       final result = await _channel.invokeMethod<String>('startCapture', {
-        'max_duration_ms': settingsService.maxDurationMs,
+        'max_duration_ms': settingsService?.maxDurationMs ?? 20000,
       });
 
       if (!mounted) return;
