@@ -499,6 +499,10 @@ class FloatingOverlayService : Service() {
         timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
 
+        // Stop capture FIRST — removes framePollRunnable so no more frames arrive
+        // after the completion signal. Then broadcast with the final frame list.
+        stopCapture()
+
         val duration = System.currentTimeMillis() - captureStartTime
         val intent = Intent("com.athena.app.SCAN_COMPLETE").apply {
             putExtra("frameCount", capturedFrames.size)
@@ -530,6 +534,12 @@ class FloatingOverlayService : Service() {
         statusText?.text = "Cancelled — no analysis"
         timerRunnable?.let { handler.removeCallbacks(it) }
         autoCloseRunnable?.let { handler.removeCallbacks(it) }
+
+        // Stop capture FIRST — this removes framePollRunnable from the handler and
+        // cleans up VirtualDisplay/ImageReader. No more frames will arrive after this.
+        // Then clear frames and broadcast completion so Flutter analysis runs with
+        // an empty frame list (correct behaviour for cancelled scans).
+        stopCapture()
         capturedFrames.clear()
 
         broadcastScanComplete()
