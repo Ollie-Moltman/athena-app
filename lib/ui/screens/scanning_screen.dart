@@ -75,10 +75,11 @@ class _ScanningScreenState extends State<ScanningScreen>
     });
 
     // Wait for native side to signal scan complete via EventChannel/broadcast
+    if (!mounted) return;
+    _analysisStarted = true; // Set BEFORE await to close race window
     await _captureService.waitForScanComplete();
 
-    if (!mounted || _analysisStarted) return;
-    _analysisStarted = true;
+    if (!mounted) return;
 
     final capturedFrames = _captureService.frames;
     _logLines.add('Scan complete — ${capturedFrames.length} frames captured');

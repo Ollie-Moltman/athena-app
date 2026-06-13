@@ -54,6 +54,10 @@ class ScreenCaptureService {
     }
     _scanCompleter = Completer<void>();
 
+    // Cancel any stale subscription before starting fresh
+    await _frameSubscription?.cancel();
+    _frameSubscription = null;
+
     try {
       // Ask native side for screen dimensions
       final dims = await _channel.invokeMethod<Map<dynamic, dynamic>>('getScreenDimensions');
@@ -119,6 +123,18 @@ class ScreenCaptureService {
     } on PlatformException catch (_) {
       // Ignore errors when stopping
     }
+    if (!_scanCompleter.isCompleted) {
+      _scanCompleter.complete();
+    }
+  }
+
+
+  /// Reset capture state without calling native stop — used when a capture
+  /// attempt returned early (e.g. overlay_required) so the next tap works.
+  void reset() {
+    _captureStarted = false;
+    _frameSubscription?.cancel();
+    _frameSubscription = null;
     if (!_scanCompleter.isCompleted) {
       _scanCompleter.complete();
     }

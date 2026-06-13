@@ -107,6 +107,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         // Cancel the scanReady listener since no overlay will appear.
         _scanReadySub?.cancel();
         _scanReadySub = null;
+        _captureService.reset(); // Clear stale _captureStarted so next tap works
         setState(() => _isCapturing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
