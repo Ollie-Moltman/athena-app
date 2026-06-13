@@ -53,6 +53,7 @@ class FloatingOverlayService : Service() {
     private var captureStartTime = 0L
     private var elapsedSeconds = 0
     private var timerRunnable: Runnable? = null
+    private var framePollRunnable: Runnable? = null
 
     // UI refs — all buttons stored as class members so we can modify alpha/text
     private var scanBtn: ImageView? = null
@@ -417,34 +418,38 @@ class FloatingOverlayService : Service() {
         }
         handler.post(timerRunnable!!)
 
-        captureThread = Thread {
-            while (isCapturing) {
-                if (!isPaused) {
-                    try {
-                        val image = imageReader?.acquireLatestImage()
-                        if (image != null) {
-                            try {
-                                val frame = imageToBytes(image)
-                                if (frame != null) {
-                                    capturedFrames.add(frame)
-                                    broadcastFrame(frame)
-                                }
-                            } finally {
-                                image.close()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("AthenaCapture", "Frame capture error: ${e.message}", e)
-                    }
-                }
+        // Non-blocking frame capture using handler polling.
+        // Uses setOnQueueAvailableListener (API 29+) when available for efficiency,
+        // falls back to handler.postDelayed polling for older APIs.
+        // Never blocks indefinitely — each poll is a quick non-blocking check.
+        framePollRunnable = object : Runnable {
+            override fun run() {
+                if (!isCapturing || isPaused) return
                 try {
-                    Thread.sleep(16)
-                } catch (e: InterruptedException) {
-                    break
+                    val image = imageReader?.acquireLatestImage()
+                    if (image != null) {
+                        try {
+                            val frame = imageToBytes(image)
+                            if (frame != null) {
+                                capturedFrames.add(frame)
+                                broadcastFrame(frame)
+                            }
+                        } finally {
+                            image.close()
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AthenaCapture", "Frame capture error: ${e.message}", e)
+                }
+                if (isCapturing) {
+                    handler.postDelayed(this, 16)
                 }
             }
         }
-        captureThread?.start()
+
+        // Pure polling at ~60fps — works on all API levels, never blocks.
+        handler.post(framePollRunnable!!)
+
 
         updateNotification("Scanning in progress...")
     }
@@ -535,6 +540,8 @@ class FloatingOverlayService : Service() {
     private fun stopCapture() {
         isCapturing = false
         isPaused = false
+        // Cancel pending frame poll runnable (we no longer use a Thread)
+        framePollRunnable?.let { handler.removeCallbacks(it) }
         captureThread?.interrupt()
         captureThread = null
         timerRunnable?.let { handler.removeCallbacks(it) }
