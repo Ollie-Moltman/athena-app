@@ -50,6 +50,7 @@ class _ScanningScreenState extends State<ScanningScreen>
     });
 
     await _captureService.startCapture(
+      isMounted: mounted,
       onFrame: (frame) {
         setState(() {
           _capturedFrames++;

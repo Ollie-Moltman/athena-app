@@ -41,7 +41,12 @@ class ScreenCaptureService {
   /// Request screen capture permission and start capturing frames.
   /// Returns quickly after permission is granted; actual completion is signaled
   /// via waitForScanComplete().
+  ///
+  /// `isMounted` must be the caller's `State.mounted` value captured at call-time.
+  /// If the widget is disposed before a pending frame arrives, `isMounted` will be
+  /// false and the callback is silently dropped — preventing setState on unmounted.
   Future<void> startCapture({
+    required bool isMounted,
     required Function(Uint8List frame) onFrame,
     required Function(String error) onError,
     int maxDurationMs = 10000,
@@ -71,9 +76,13 @@ class ScreenCaptureService {
         'max_duration_ms': maxDurationMs,
       });
 
-      // Listen for frames and control events via EventChannel
+      // Listen for frames and control events via EventChannel.
+      // isMounted is captured at call-time — a late-arriving frame (after widget
+      // disposal) cannot call setState on an unmounted State object.
       _frameSubscription = _frameChannel.receiveBroadcastStream().listen(
         (dynamic data) {
+          if (!isMounted) return;
+
           if (data == null) {
             // null signals end of capture
             if (!_scanCompleter.isCompleted) {
@@ -98,6 +107,7 @@ class ScreenCaptureService {
           }
         },
         onError: (error) {
+          if (!isMounted) return;
           onError(error.toString());
           if (!_scanCompleter.isCompleted) {
             _scanCompleter.complete();
