@@ -307,9 +307,9 @@ class FloatingOverlayService : Service() {
             }
         }
 
-        btnRow.addView(buttonWithLabel(scanBtnWrapper!!, scanTextLabel!!))
-        btnRow.addView(buttonWithLabel(pauseBtnWrapper!!, pauseTextLabel!!))
-        btnRow.addView(buttonWithLabel(cancelBtnWrapper!!, cancelTextLabel!!))
+        btnRow.addView(buttonWithLabel(scanBtnWrapper ?: return, scanTextLabel ?: return))
+        btnRow.addView(buttonWithLabel(pauseBtnWrapper ?: return, pauseTextLabel ?: return))
+        btnRow.addView(buttonWithLabel(cancelBtnWrapper ?: return, cancelTextLabel ?: return))
 
         container.addView(debugBanner)
         container.addView(topRow)
@@ -321,6 +321,12 @@ class FloatingOverlayService : Service() {
     @SuppressLint("WrongConstant")
     private fun setupCapture() {
         try {
+            if (mediaProjection == null || windowManager == null) {
+                android.util.Log.e("AthenaOverlay", "setupCapture skipped: mediaProjection=${mediaProjection == null}, windowManager=${windowManager == null}")
+                statusText?.text = "Permission error — restart scan"
+                statusText?.setTextColor(Color.parseColor("#FFF85149"))
+                return
+            }
             val metrics = DisplayMetrics()
             windowManager?.defaultDisplay?.getMetrics(metrics)
             val width = metrics.widthPixels
@@ -415,9 +421,7 @@ class FloatingOverlayService : Service() {
             while (isCapturing) {
                 if (!isPaused) {
                     try {
-                        // Use acquireNextImage (blocks until image available) instead of
-                        // acquireLatestImage (returns null immediately if queue empty).
-                        val image = imageReader?.acquireNextImage()
+                        val image = imageReader?.acquireLatestImage()
                         if (image != null) {
                             try {
                                 val frame = imageToBytes(image)
@@ -430,7 +434,6 @@ class FloatingOverlayService : Service() {
                             }
                         }
                     } catch (e: Exception) {
-                        // Log but don't crash — keep capturing
                         android.util.Log.e("AthenaCapture", "Frame capture error: ${e.message}", e)
                     }
                 }
